@@ -27,23 +27,52 @@ def prepare_features(df):
     df = df[df["yield"] < threshold].copy()
     print(f"Removed outliers (yield >= {threshold:.2f}). Rows remaining: {len(df)}")
 
-    # 2. Feature engineering: Log transform Area (STEP 5)
+    # IMPROVEMENT 2: Remove extreme yield crops
+    print("Removing extreme yield crops...")
+    crop_median_check = df.groupby("crop_code")["yield"].median()
+    valid_crops = crop_median_check[crop_median_check <= 100].index
+    before_rows = len(df)
+    df = df[df["crop_code"].isin(valid_crops)]
+    print("Rows before extreme crop removal:", before_rows)
+    print("Rows after removal:", len(df))
+    print("Remaining crops:", df["crop_code"].nunique())
+
+    # FIX 1: Remove crop normalization from model features
+    # Keeping calculations commented for future experimentation
+    """
+    # IMPROVEMENT 1: Crop Yield Normalization
+    print("Adding crop yield normalization...")
+    crop_median = df.groupby("crop_code")["yield"].median()
+    df["crop_median_yield"] = df["crop_code"].map(crop_median)
+    df["crop_median_yield"] = df["crop_median_yield"].replace(0, 0.001)
+    df["yield_ratio"] = df["yield"] / df["crop_median_yield"]
+    df["yield_ratio"] = df["yield_ratio"].clip(0, 20)
+    df["log_yield_ratio"] = np.log1p(df["yield_ratio"])
+    """
+
+    # 2. Feature engineering: Log transform Area
     df["Area"] = np.log1p(df["Area"])
     
-    # STEP 2: Use Log(Yield) Directly
-    print("Applying log transform to yield...")
-    df["log_yield"] = np.log1p(df["yield"])
-
     # STEP 3: Keep Interaction Features
     print("Adding interaction features...")
     df["rain_temp"] = df["season_rainfall"] * df["season_temperature"]
     df["rain_humidity"] = df["season_rainfall"] * df["season_humidity"]
     df["temp_humidity"] = df["season_temperature"] * df["season_humidity"]
     df["area_rain"] = df["Area"] * df["season_rainfall"]
+    
+    # STEP 9: Add new environmental interaction features
+    df["solar_temp"] = df["season_solar"] * df["season_temperature"]
+    df["soil_rain"] = df["season_soil"] * df["season_rainfall"]
+    df["soil_temp"] = df["season_soil"] * df["season_temperature"]
+    df["solar_rain"] = df["season_solar"] * df["season_rainfall"]
 
-    # STEP 13: Clean Debug
+    # STEP 11: Add debug prints
+    print("Environmental features added:")
+    print("Solar mean:", df["season_solar"].mean())
+    print("Soil mean:", df["season_soil"].mean())
+
+    # FIX 7: Remove normalization debug prints
     print(f"Debug - Max yield: {df['yield'].max():.4f}")
-    print(f"Debug - Max log_yield: {df['log_yield'].max():.4f}")
     print(f"Debug - Max Area (log): {df['Area'].max():.4f}")
     
     return df
@@ -55,14 +84,17 @@ def split_data(df):
     """
     print("\nSplitting data...")
     
-    # STEP 4: Final Feature List
+    # STEP 8 & 9: Final Feature List (Extended)
     feature_cols = [
         "Area", "crop_code", "district_code", "season_code",
         "season_temperature", "season_rainfall", "season_humidity",
-        "rain_temp", "rain_humidity", "temp_humidity", "area_rain"
+        "season_solar", "season_soil",
+        "rain_temp", "rain_humidity", "temp_humidity", "area_rain",
+        "solar_temp", "soil_rain", "soil_temp", "solar_rain"
     ]
     
-    # Target columns (STEP 2)
+    # FIX 2: Restore original target
+    df["log_yield"] = np.log1p(df["yield"])
     target = 'log_yield'
     original_target = 'yield'
     
@@ -85,7 +117,7 @@ def split_data(df):
     X_test = test_df[feature_cols]
     y_test = test_df[target]
     
-    # We need this for final evaluation (STEP 10)
+    # We need this for final evaluation
     y_test_original = test_df[original_target]
     
     print(f"Train size: {len(X_train)}")
@@ -110,11 +142,13 @@ def train_best_model(X_train, y_train):
         n_jobs=-1
     )
     
-    # STEP 8: Keep HistGradientBoosting
+    # FIX 4: Replace RandomizedSearchCV with stable HGB model
+    print("Training HistGradientBoostingRegressor (stable hyperparameters)...")
     hgb_model = HistGradientBoostingRegressor(
         max_iter=300,
         learning_rate=0.05,
         max_depth=10,
+        min_samples_leaf=20,
         random_state=42
     )
     
@@ -151,7 +185,7 @@ def evaluate_model(model, model_name, X_test, y_test_log, y_test_original):
     # Get log predictions
     log_predictions = model.predict(X_test)
     
-    # STEP 6 & 10: Prediction Conversion and Evaluation
+    # FIX 5: Restore prediction conversion
     predicted_yield = np.expm1(log_predictions)
     
     r2 = r2_score(y_test_original, predicted_yield)
@@ -187,7 +221,7 @@ def test_prediction(model, model_name, feature_columns):
     """
     print(f"\nRunning test prediction for {model_name} with uncertainty...")
     
-    # STEP 11: Fix Test Prediction Sample
+    # STEP 11: Fix Test Prediction Sample (Extended for new features)
     sample_data = {
         'Area': np.log1p(2.0),
         'crop_code': 10,
@@ -196,10 +230,16 @@ def test_prediction(model, model_name, feature_columns):
         'season_temperature': 25.0,
         'season_rainfall': 100.0,
         'season_humidity': 60.0,
+        'season_solar': 18.0,
+        'season_soil': 0.4,
         'rain_temp': 100.0 * 25.0,
         'rain_humidity': 100.0 * 60.0,
         'temp_humidity': 25.0 * 60.0,
-        'area_rain': np.log1p(2.0) * 100.0
+        'area_rain': np.log1p(2.0) * 100.0,
+        'solar_temp': 18.0 * 25.0,
+        'soil_rain': 0.4 * 100.0,
+        'soil_temp': 0.4 * 25.0,
+        'solar_rain': 18.0 * 100.0
     }
     
     sample_df = pd.DataFrame([sample_data])[feature_columns]
@@ -207,7 +247,7 @@ def test_prediction(model, model_name, feature_columns):
     # Get mean log prediction
     log_pred = model.predict(sample_df)[0]
     
-    # Convert back to yield
+    # FIX 6: Fix test prediction conversion
     yield_pred = np.expm1(log_pred)
     
     # STEP 12: Uncertainty

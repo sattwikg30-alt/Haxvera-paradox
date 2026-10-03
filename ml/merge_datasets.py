@@ -22,42 +22,54 @@ def merge_datasets(df_processed, df_climate):
     # 1. Inner merge on year
     df_merged = pd.merge(df_processed, df_climate, on='year', how='inner')
     
-    # 2. Initialize new seasonal climate columns
+    # 2. Initialize new seasonal climate columns (STEP 5)
     df_merged['season_temperature'] = 0.0
     df_merged['season_rainfall'] = 0.0
     df_merged['season_humidity'] = 0.0
+    df_merged['season_solar'] = 0.0
+    df_merged['season_soil'] = 0.0
 
-    # 3. Map climate features based on season_code
+    # 3. Map climate features based on season_code (STEP 5)
     # Kharif (0)
     df_merged.loc[df_merged['season_code'] == 0, 'season_temperature'] = df_merged['kharif_temp']
     df_merged.loc[df_merged['season_code'] == 0, 'season_rainfall'] = df_merged['kharif_rainfall']
     df_merged.loc[df_merged['season_code'] == 0, 'season_humidity'] = df_merged['kharif_humidity']
+    df_merged.loc[df_merged['season_code'] == 0, 'season_solar'] = df_merged['kharif_solar']
+    df_merged.loc[df_merged['season_code'] == 0, 'season_soil'] = df_merged['kharif_soil']
     
     # Rabi (1)
     df_merged.loc[df_merged['season_code'] == 1, 'season_temperature'] = df_merged['rabi_temp']
     df_merged.loc[df_merged['season_code'] == 1, 'season_rainfall'] = df_merged['rabi_rainfall']
     df_merged.loc[df_merged['season_code'] == 1, 'season_humidity'] = df_merged['rabi_humidity']
+    df_merged.loc[df_merged['season_code'] == 1, 'season_solar'] = df_merged['rabi_solar']
+    df_merged.loc[df_merged['season_code'] == 1, 'season_soil'] = df_merged['rabi_soil']
     
     # Summer (2)
     df_merged.loc[df_merged['season_code'] == 2, 'season_temperature'] = df_merged['summer_temp']
     df_merged.loc[df_merged['season_code'] == 2, 'season_rainfall'] = df_merged['summer_rainfall']
     df_merged.loc[df_merged['season_code'] == 2, 'season_humidity'] = df_merged['summer_humidity']
+    df_merged.loc[df_merged['season_code'] == 2, 'season_solar'] = df_merged['summer_solar']
+    df_merged.loc[df_merged['season_code'] == 2, 'season_soil'] = df_merged['summer_soil']
     
     # Whole Year (3)
     df_merged.loc[df_merged['season_code'] == 3, 'season_temperature'] = df_merged['year_temp']
     df_merged.loc[df_merged['season_code'] == 3, 'season_rainfall'] = df_merged['year_rainfall']
     df_merged.loc[df_merged['season_code'] == 3, 'season_humidity'] = df_merged['year_humidity']
+    df_merged.loc[df_merged['season_code'] == 3, 'season_solar'] = df_merged['year_solar']
+    df_merged.loc[df_merged['season_code'] == 3, 'season_soil'] = df_merged['year_soil']
 
-    # 4. Final columns reordering and cleaning
+    # 4. Final columns reordering and cleaning (STEP 6)
     # DROP individual seasonal columns
     cols_to_drop = [
         'kharif_temp', 'rabi_temp', 'summer_temp', 'year_temp',
         'kharif_rainfall', 'rabi_rainfall', 'summer_rainfall', 'year_rainfall',
-        'kharif_humidity', 'rabi_humidity', 'summer_humidity', 'year_humidity'
+        'kharif_humidity', 'rabi_humidity', 'summer_humidity', 'year_humidity',
+        'kharif_solar', 'rabi_solar', 'summer_solar', 'year_solar',
+        'kharif_soil', 'rabi_soil', 'summer_soil', 'year_soil'
     ]
     df_final = df_merged.drop(columns=cols_to_drop)
 
-    # Requested order: year, Area, crop_code, district_code, season_code, season_temperature, season_rainfall, season_humidity, yield
+    # Requested order (STEP 7)
     final_columns = [
         'year', 
         'Area', 
@@ -66,7 +78,9 @@ def merge_datasets(df_processed, df_climate):
         'season_code', 
         'season_temperature', 
         'season_rainfall', 
-        'season_humidity', 
+        'season_humidity',
+        'season_solar',
+        'season_soil',
         'yield'
     ]
     
