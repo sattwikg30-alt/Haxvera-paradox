@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { 
   Card, 
@@ -25,6 +26,11 @@ interface PredictionResult {
   upper_bound: number;
   risk_level: string;
   risk_score: number;
+  explainability: {
+    topFactors: string[];
+    recommendations: string[];
+    explanation: string[];
+  };
 }
 
 interface ClimateData {
@@ -41,6 +47,7 @@ export default function YieldPredictionPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [climateUsed, setClimateUsed] = useState<ClimateData | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   
   const [formData, setFormData] = useState({
     crop: "",
@@ -118,6 +125,7 @@ export default function YieldPredictionPage() {
     setError(null);
     setResult(null);
     setClimateUsed(null);
+    setSaveStatus("idle");
 
     try {
       // 1. Get Coordinates
@@ -165,15 +173,59 @@ export default function YieldPredictionPage() {
         throw new Error(errorData.detail || "Prediction API failed.");
       }
 
-      const result = await response.json();
-      console.log("ML RESPONSE DATA")
-      console.log(result)
-      setResult(result);
+      const mlResult: PredictionResult = await response.json();
+      console.log("ML RESPONSE DATA");
+      console.log(mlResult);
+      setResult(mlResult);
+
+      // ── Persist to DB ──────────────────────────────────────────────────
+      setSaveStatus("saving");
+      try {
+        const saveRes = await fetch("/api/crops", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            // Form fields
+            cropType: formData.crop,
+            location: formData.location,
+            farmSize: parseFloat(formData.area),
+            sowingMonth: formData.month,
+
+            // ML prediction outputs
+            predictedYield: mlResult.predicted_yield,
+            yieldMin: mlResult.lower_bound,
+            yieldMax: mlResult.upper_bound,
+            riskLevel:
+              mlResult.risk_level.charAt(0).toUpperCase() +
+              mlResult.risk_level.slice(1).toLowerCase(),
+            confidence: `${(100 - mlResult.risk_score * 100).toFixed(0)}%`,
+
+            // Weather snapshot used in prediction
+            weatherTemp: climate.temperature,
+            weatherRain: climate.rainfall,
+            weatherHumidity: climate.humidity,
+          }),
+        });
+
+        if (saveRes.ok) {
+          setSaveStatus("saved");
+        } else {
+          console.warn("DB save returned non-OK status", saveRes.status);
+          setSaveStatus("error");
+        }
+      } catch (saveErr) {
+        console.error("DB save failed:", saveErr);
+        setSaveStatus("error");
+      }
+      // ───────────────────────────────────────────────────────────────────
     } catch (err: any) {
-      console.error("PREDICTION ERROR")
-      console.error(err)
+      console.error("PREDICTION ERROR");
+      console.error(err);
       if (err instanceof TypeError) {
-        console.error("NETWORK FAILURE")
+        console.error("NETWORK FAILURE");
       }
       setError(err.message || "Prediction failed. Please try again.");
     } finally {
@@ -304,11 +356,31 @@ export default function YieldPredictionPage() {
           </button>
         </form>
 
-        {/* STEP 5 — Error handling */}
+        {/* Error */}
         {error && (
           <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-400">
             <AlertCircle size={20} />
             <p className="text-sm font-medium">{error}</p>
+          </div>
+        )}
+
+        {/* DB Save status */}
+        {saveStatus === "saving" && (
+          <div className="flex items-center gap-2 text-xs text-text-secondary animate-pulse">
+            <Loader2 size={14} className="animate-spin" />
+            Saving to dashboard...
+          </div>
+        )}
+        {saveStatus === "saved" && (
+          <div className="flex items-center gap-2 text-xs text-accent-green">
+            <CheckCircle2 size={14} />
+            Prediction saved — your dashboard has been updated.
+          </div>
+        )}
+        {saveStatus === "error" && (
+          <div className="flex items-center gap-2 text-xs text-orange-400">
+            <AlertCircle size={14} />
+            Prediction shown but could not be saved to dashboard.
           </div>
         )}
 
@@ -390,6 +462,61 @@ export default function YieldPredictionPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Explainability Cards */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <Card className="bg-secondary-bg/20 border-white/5 overflow-hidden">
+                <CardHeader className="border-b border-white/5 bg-white/[0.02] py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+                      <Beaker size={18} />
+                    </div>
+                    <CardTitle className="text-lg">Why this prediction?</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <ul className="space-y-3">
+                    {result.explainability.explanation.map((item, idx) => (
+                      <li key={idx} className={`flex items-start gap-3 text-sm ${idx === 0 ? 'text-text-secondary font-medium' : 'text-white'}`}>
+                        {idx > 0 && <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.5)]" />}
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card className={`bg-secondary-bg/20 border-white/5 overflow-hidden border-l-4 ${
+                result.risk_level === "LOW" ? "border-l-green-500" : 
+                result.risk_level === "MEDIUM" ? "border-l-orange-500" : "border-l-red-500"
+              }`}>
+                <CardHeader className="border-b border-white/5 bg-white/[0.02] py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-accent-green/10 text-accent-green">
+                      <Leaf size={18} />
+                    </div>
+                    <CardTitle className="text-lg">Agronomic Recommendations</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  {result.explainability.recommendations.length > 0 ? (
+                    <ul className="space-y-3">
+                      {result.explainability.recommendations.map((rec, idx) => (
+                        <li key={idx} className="flex items-start gap-3 text-sm text-white">
+                          <CheckCircle2 size={16} className="mt-0.5 text-accent-green shrink-0" />
+                          <span>{rec}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="flex items-center gap-3 text-sm text-text-secondary italic py-2">
+                      <AlertCircle size={16} />
+                      <p>No major climate risks detected.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
         )}
       </div>
