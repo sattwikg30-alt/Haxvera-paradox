@@ -1,268 +1,242 @@
-import pandas as pd
-import numpy as np
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import Optional
+from fastapi.middleware.cors import CORSMiddleware
 import os
-import joblib
+import sys
+import requests
+from dotenv import load_dotenv
 
-# STEP 1 — Load required models globally
-MODEL_DIR = 'ml'
-models = {
-    "q20": joblib.load(os.path.join(MODEL_DIR, "model_q20.pkl")),
-    "q50": joblib.load(os.path.join(MODEL_DIR, "model_q50.pkl")),
-    "q80": joblib.load(os.path.join(MODEL_DIR, "model_q80.pkl")),
-    "point": joblib.load(os.path.join(MODEL_DIR, "model_point.pkl"))
-}
-features = joblib.load(os.path.join(MODEL_DIR, "features.pkl"))
+# Load environment variables from .env
+load_dotenv()
 
-# PRE-LOADING DATA FOR MAPPINGS (Steps 3, 4, 12)
-DATA_PATH = os.path.join('ml', 'data', 'crop_production.csv')
-PROCESSED_DATA_PATH = os.path.join('ml', 'data', 'processed.csv')
+# Fast2SMS configuration (loaded from .env)
+FAST2SMS_API_KEY = os.getenv("FAST2SMS_API_KEY", "")
+FAST2SMS_URL = os.getenv("FAST2SMS_URL", "https://www.fast2sms.com/dev/bulkV2")
 
-def build_mappings():
-    """Builds crop and district mappings following preprocess.py logic."""
-    df_raw = pd.read_csv(DATA_PATH)
-    
-    # Preprocessing steps matching preprocess.py
-    df_raw = df_raw.rename(columns={'Crop_Year': 'year'}).dropna()
-    df_raw = df_raw[(df_raw['Area'] > 0) & (df_raw['Production'] > 0)]
-    df_raw['Season'] = df_raw['Season'].str.strip()
-    
-    # Filter rare crops (preprocess.py logic)
-    crop_counts = df_raw["Crop"].value_counts()
-    threshold = 1000
-    valid_crops = crop_counts[crop_counts >= threshold].index
-    df_filtered = df_raw[df_raw["Crop"].isin(valid_crops)].copy()
-    
-    # Create codes using categorical encoding
-    df_filtered['crop_code'] = df_filtered['Crop'].astype('category').cat.codes
-    df_filtered['district_code'] = df_filtered['District_Name'].astype('category').cat.codes
-    
-    # Build crop mapping (Step 3)
-    crop_map = dict(zip(df_filtered['Crop'].str.lower(), df_filtered['crop_code']))
-    
-    # Build district mapping (Step 4)
-    # Normalize names: uppercase, strip spaces
-    df_filtered['district_normalized'] = df_filtered['District_Name'].str.upper().str.strip()
-    district_map = dict(zip(df_filtered['district_normalized'], df_filtered['district_code']))
-    
-    # Most common district for fallback
-    most_common_district_code = df_filtered['district_code'].mode()[0]
-    
-    # Build crop mean for absolute yield conversion (Step 12)
-    # log_yield = log1p(yield) from final_dataset.csv
-    df_final = pd.read_csv(os.path.join('ml', 'data', 'final_dataset.csv'))
-    df_final['yield_log'] = np.log1p(df_final['yield'])
-    crop_means = df_final.groupby('crop_code')['yield_log'].mean().to_dict()
-    
-    return crop_map, district_map, most_common_district_code, crop_means
+# Add current directory to path so we can import predict
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from predict import predict_yield
 
-CROP_MAP, DISTRICT_MAP, MOST_COMMON_DISTRICT_CODE, CROP_MEANS = build_mappings()
+app = FastAPI(title="Agri Yield Prediction ML API")
 
-# STEP 2 — Create input conversion functions
-def normalize_crop_name(crop_name):
-    return crop_name.lower().strip()
+# STEP 7 — Add CORS (important for Next.js access)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
-def normalize_district(district_name):
-    return district_name.upper().strip()
+# PART 2 — Improve PredictionInput schema
+class PredictionInput(BaseModel):
+    crop: str
+    district: str
+    area: float
+    month: str
+    
+    # Climate fields
+    temperature: Optional[float] = None
+    rainfall: Optional[float] = None
+    humidity: Optional[float] = None
+    solar: Optional[float] = None
+    soil: Optional[float] = None
+    
+    # Coordinates
+    lat: Optional[float] = None
+    lon: Optional[float] = None
 
-def month_to_season_code(month):
-    """Converts month to season code (Step 5)."""
-    month = month.capitalize()
-    kharif_months = ["June", "July", "August", "September"]
-    rabi_months = ["October", "November", "December", "January", "February"]
-    summer_months = ["March", "April", "May"]
-    
-    if month in kharif_months:
-        return 0
-    elif month in rabi_months:
-        return 1
-    elif month in summer_months:
-        return 2
-    else:
-        return 3 # Whole year fallback
+# STEP 4 — Root test endpoint
+@app.get("/")
+def read_root():
+    return {"status": "ML API running"}
 
-def acre_to_hectare(acres):
-    """Converts acres to hectares (Step 6)."""
-    return acres * 0.4047
+# PART 3 — Add health endpoint
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
-# Improvement 3 — Input validation
-def validate_inputs(input_dict):
-    """Validates prediction inputs (Step 3)."""
-    if float(input_dict.get("area", 0)) <= 0:
-        raise ValueError("Area must be greater than 0.")
-    
-    crop_name = normalize_crop_name(input_dict.get("crop", ""))
-    if not crop_name or crop_name not in CROP_MAP:
-        raise ValueError(f"Crop '{crop_name}' not found or invalid.")
-    
-    month = input_dict.get("month", "").capitalize()
-    valid_months = [
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-    ]
-    if month not in valid_months:
-        raise ValueError(f"Month '{month}' is invalid.")
-    
-    if not input_dict.get("district", "").strip():
-        raise ValueError("District name cannot be empty.")
-
-# Fix 1 — Remove random climate generation
-def generate_climate_features(input_dict):
-    """Returns climate features from input with safe None handling and estimates (Step 7)."""
-    
-    def get_safe(key, default):
-        val = input_dict.get(key)
-        return val if val is not None else default
-
-    # 1 Fix None climate handling
-    temp = get_safe("temperature", 25.0)
-    rain = get_safe("rainfall", 100.0)
-    hum = get_safe("humidity", 60.0)
-    
-    # 3 Add solar estimate (Basic estimate if missing)
-    # Solar radiation usually ranges from 15-25 based on cloud cover/month
-    solar = get_safe("solar", 18.0)
-    
-    # 4 Add soil estimate (Basic estimate if missing)
-    # Soil wetness is usually 0.3-0.8 based on rainfall
-    soil = get_safe("soil", 0.5)
-
-    return {
-        "season_temperature": temp,
-        "season_rainfall": rain,
-        "season_humidity": hum,
-        "season_solar": solar,
-        "season_soil": soil
-    }
-
-# STEP 11 — Prediction pipeline
-def predict_yield(input_dict):
-    """
-    Main prediction function that matches train.py logic exactly.
-    """
-    # Improvement 3 — Input validation
-    validate_inputs(input_dict)
-            
-    # Normalize inputs
-    crop_name = normalize_crop_name(input_dict["crop"])
-    district_name = normalize_district(input_dict["district"])
-    acres = float(input_dict["area"])
-    month = input_dict["month"]
-    
-    # Get mappings
-    crop_code = CROP_MAP[crop_name]
-    
-    # Improvement 2 — Better district fallback
-    district_code = DISTRICT_MAP.get(district_name)
-    if district_code is None:
-        print("District not found, using fallback")
-        district_code = MOST_COMMON_DISTRICT_CODE
-        
-    season_code = month_to_season_code(month)
-    
-    # Area conversion (Step 6)
-    hectare = acre_to_hectare(acres)
-    area_log = np.log1p(hectare)
-    
-    # Fix 2 & 3 — Accept climate fields and keep lat/lon
-    climate = generate_climate_features(input_dict)
-    
-    # STEP 8 — Climate interaction features
-    climate["temp_humidity"] = climate["season_temperature"] * climate["season_humidity"]
-    climate["rain_soil"] = climate["season_rainfall"] * climate["season_soil"]
-    climate["temp_soil"] = climate["season_temperature"] * climate["season_soil"]
-    climate["rain_solar"] = climate["season_rainfall"] * climate["season_solar"]
-    climate["humidity_solar"] = climate["season_humidity"] * climate["season_solar"]
-    
-    # STEP 9 — Climate anomaly features (Step 9)
-    climate["rain_anomaly"] = 0
-    climate["temp_anomaly"] = 0
-    climate["humidity_anomaly"] = 0
-    
-    # STEP 10 — Feature vector creation
-    data = {
-        "Area": area_log,
-        "crop_code": crop_code,
-        "district_code": district_code,
-        "season_code": season_code,
-        **climate
-    }
-    
-    df = pd.DataFrame([data])
-    
-    # Ensure column order matches features.pkl
-    df = df[features]
-    
-    # Improvement 5 — Add prediction debug logging
-    print("Feature vector used:")
-    print(df.head())
-    
-    # Predict (Step 11)
-    q20 = models["q20"].predict(df)[0]
-    q50 = models["q50"].predict(df)[0]
-    q80 = models["q80"].predict(df)[0]
-    
-    # Prevent quantile crossing
-    q20 = min(q20, q50)
-    q80 = max(q80, q50)
-    
-    # Point model prediction
-    point = models["point"].predict(df)[0]
-    
-    # Blend
-    relative_yield = 0.7 * q50 + 0.3 * point
-    
-    # Improvement 1 — Safe crop mean lookup
-    crop_mean = CROP_MEANS.get(
-        crop_code, 
-        np.mean(list(CROP_MEANS.values()))
-    )
-    
-    def to_absolute(rel):
-        log_yield = rel + crop_mean
-        return np.expm1(log_yield)
-    
-    absolute_yield = to_absolute(relative_yield)
-    lower_bound = to_absolute(q20)
-    upper_bound = to_absolute(q80)
-    median_yield = to_absolute(q50) # q50 for risk calculation
-    
-    # STEP 13 — Risk calculation
-    # risk = (q80 - q20) / (q50 + 0.5)
-    risk_score = (upper_bound - lower_bound) / (median_yield + 0.5)
-    
-    if risk_score < 0.6:
-        risk_level = "LOW"
-    elif risk_score < 1.2:
-        risk_level = "MEDIUM"
-    else:
-        risk_level = "HIGH"
-    
-    # STEP 14 — Output format (Improvement 6: return dict only)
-    return {
-        "predicted_yield": float(absolute_yield),
-        "lower_bound": float(lower_bound),
-        "upper_bound": float(upper_bound),
-        "risk_level": risk_level,
-        "risk_score": float(risk_score)
-    }
-
-# STEP 15 — Create main test block
-if __name__ == "__main__":
-    sample_input = {
-        "crop": "Rice",
-        "district": "Malda",
-        "area": 2,
-        "month": "February",
-        "temperature": 27.9,
-        "rainfall": 0.0,
-        "humidity": 89.0
-    }
-    
+# STEP 5 — Prediction endpoint
+@app.post("/predict")
+def predict(input_data: PredictionInput):
+    # STEP 6 — Error handling
     try:
-        result = predict_yield(sample_input)
-        print("\nPrediction Result:")
-        print(f"Predicted yield: {result['predicted_yield']:.2f} ton/hectare")
-        print(f"Confidence interval: [{result['lower_bound']:.2f}, {result['upper_bound']:.2f}]")
-        print(f"Risk: {result['risk_level']} (Score: {result['risk_score']:.4f})")
+        # Convert Pydantic model to dict
+        data = input_data.dict()
+        # Call prediction function
+        result = predict_yield(data)
+        return result
+    except ValueError as e:
+        # Validation errors from predict.py
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"Prediction failed: {e}")
+        # General server errors
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+# PART 5 — Add test endpoint inside api.py
+@app.get("/test")
+def test_prediction():
+    sample_data = {
+        "crop": "Rice",
+        "district": "Nadia",
+        "area": 2.0,
+        "month": "January",
+        "temperature": 25.0,
+        "rainfall": 100.0,
+        "humidity": 60.0
+    }
+    try:
+        result = predict_yield(sample_data)
+        return {
+            "message": "Sample prediction successful",
+            "input": sample_data,
+            "output": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ─────────────────────────────────────────────────────────────
+# SMS INTEGRATION — httpSMS webhook + sending API
+# ─────────────────────────────────────────────────────────────
+
+# httpSMS configuration (loaded from .env)
+HTTPSMS_API_KEY  = os.getenv("HTTPSMS_API_KEY", "")
+HTTPSMS_SEND_URL = "https://api.httpsms.com/v1/messages/send"
+
+
+def send_sms(to_number: str, from_number: str, message: str) -> None:
+    """
+    Send an SMS reply via the httpSMS API.
+    Logs success/failure but never raises so the endpoint always
+    returns a clean response to the webhook caller.
+    """
+    if not HTTPSMS_API_KEY:
+        print("[SMS] WARNING: HTTPSMS_API_KEY is not set. Skipping SMS send.")
+        return
+
+    if not to_number or not from_number:
+        print("[SMS] WARNING: Sender or Receiver number is missing. Skipping SMS send.")
+        return
+
+    # Ensure E.164 format
+    def format_e164(num: str) -> str:
+        num = num.strip()
+        if not num.startswith("+"):
+            if len(num) == 10:
+                return "+91" + num
+            return "+" + num
+        return num
+
+    to_number = format_e164(to_number)
+    from_number = format_e164(from_number)
+
+    payload = {
+        "content": message,
+        "from":    from_number,
+        "to":      to_number,
+    }
+    headers = {
+        "x-api-key": HTTPSMS_API_KEY,
+        "Content-Type":  "application/json",
+    }
+
+    try:
+        response = requests.post(HTTPSMS_SEND_URL, json=payload, headers=headers, timeout=10)
+        print(f"[SMS] Sent to {to_number} (from {from_number}) | Status: {response.status_code} | Response: {response.text}")
+    except Exception as e:
+        print(f"[SMS] Failed to send SMS to {to_number}: {e}")
+
+
+@app.post("/incoming-sms")
+async def incoming_sms(data: dict):
+    """
+    Receives incoming SMS forwarded by httpSMS webhook.
+
+    Expected JSON:
+        {
+            "event": "message.phone.received",
+            "data": {
+                "id": "...",
+                "from": "919XXXXXXXXX",
+                "to": "your_number",
+                "content": "RICE SOUTH24 JUNE 1"
+            }
+        }
+
+    Parses the content, runs the ML prediction, and sends back
+    the result as an SMS to the original sender via httpSMS.
+    """
+    # ── Log raw webhook payload ─────────────────────────────────
+    print(f"[SMS-WEBHOOK] Raw data: {data}")
+
+    # ── Extract fields from httpSMS webhook structure ───────────
+    message_data = data.get("data", {})
+    sender  = message_data.get("from")
+    our_number = message_data.get("to")
+    message = message_data.get("content", "") or ""
+
+    print(f"[SMS-IN] From: {sender} | Content: {message}")
+
+    # ── Guard: empty message ────────────────────────────────────
+    if not message.strip():
+        print("[SMS-IN] Empty message body received. Skipping.")
+        return {"status": "ok"}
+
+    try:
+        # ── Parse SMS body ──────────────────────────────────────
+        parts = message.upper().strip().split()
+        if len(parts) < 4:
+            raise ValueError(f"Expected ≥4 tokens, got {len(parts)}: {parts}")
+
+        crop  = parts[0].capitalize()   # e.g. "Rice"
+        month = parts[2].capitalize()   # e.g. "June"
+        area  = float(parts[3])         # e.g. 1.0
+
+        # District hardcoded for now
+        district = "South 24 Parganas"
+
+        print(f"[SMS-PARSE] crop={crop}, month={month}, area={area}, district={district}")
+
+        # ── Run ML prediction ───────────────────────────────────
+        result = predict_yield({
+            "crop":     crop,
+            "district": district,
+            "area":     area,
+            "month":    month,
+        })
+
+        print(f"[SMS-PREDICT] Result: {result}")
+
+        # ── Format reply (rounded to 2 decimal places) ──────────
+        def _fmt(val):
+            try:
+                return round(float(val), 2)
+            except (TypeError, ValueError):
+                return val
+
+        predicted_yield = _fmt(result.get("predicted_yield", "N/A"))
+        risk_level      = result.get("risk_level", "N/A")
+        lower_bound     = _fmt(result.get("lower_bound",     "N/A"))
+        upper_bound     = _fmt(result.get("upper_bound",     "N/A"))
+
+        reply = (
+            f"Yield: {predicted_yield}\n"
+            f"Risk: {risk_level}\n"
+            f"Range: {lower_bound} - {upper_bound}"
+        )
+
+    except Exception as e:
+        print(f"[SMS-ERROR] Parsing/prediction failed: {e}")
+        reply = "Format: RICE SOUTH24 JUNE 1"
+
+    # ── Send SMS reply ──────────────────────────────────────────
+    send_sms(to_number=sender, from_number=our_number, message=reply)
+
+    return {"status": "ok"}
+
+
+# STEP 8 — Add server runner
+if __name__ == "__main__":
+    import uvicorn
+    # Use "api:app" so reload works correctly
+    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
