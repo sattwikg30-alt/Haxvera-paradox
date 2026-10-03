@@ -1,86 +1,90 @@
 @import "tailwindcss";
 
 :root {
-  --background: #040d08;
-  --foreground: #F5F7F2;
-  --secondary-bg: #0b1a11;
-  --primary-green: #143522;
-  --accent-green: #10b981;
-  /* Emerald/Neon green */
-  --accent-green-hover: #059669;
-  --text-secondary: #8DA994;
-  --border-green: rgba(16, 185, 129, 0.15);
+  --background: #020402;         /* Deep space black tint */
+  --foreground: #FFFFFF;
+  --secondary-bg: #0A0C0A;       /* Very dark grey/green */
+  --primary-green: #0A1C12;      /* Midnight forest */
+  --accent-green: #00FF88;       /* Bright neon green */
+  --accent-green-hover: #00DB75;
+  --text-secondary: #A0AAB2;     /* Cool subtle grey */
+  --border-green: rgba(0, 255, 136, 0.12);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-secondary-bg: var(--secondary-bg);
-  --color-primary-green: var(--primary-green);
-  --color-accent-green: var(--accent-green);
-  --color-accent-green-hover: var(--accent-green-hover);
-  --color-text-secondary: var(--text-secondary);
-  --color-border-green: var(--border-green);
+--color-background: var(--background);
+--color-foreground: var(--foreground);
+--color-secondary-bg: var(--secondary-bg);
+--color-primary-green: var(--primary-green);
+--color-accent-green: var(--accent-green);
+--color-accent-green-hover: var(--accent-green-hover);
+--color-text-secondary: var(--text-secondary);
+--color-border-green: var(--border-green);
 
-  --font-sans: "Inter", system-ui, sans-serif;
+--font-sans: "Inter", system-ui, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+background: var(--background);
+color: var(--foreground);
+font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Glassmorphism utility */
+/* Glassmorphism utility optimized */
 .glass {
-  background: rgba(11, 26, 17, 0.6);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(16, 185, 129, 0.1);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  background: rgba(10, 12, 10, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.3);
 }
 
 .glass-navbar {
-  background: rgba(4, 13, 8, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(16, 185, 129, 0.1);
+  background: rgba(2, 4, 2, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 /* Grid Pattern */
 .bg-grid-pattern {
-  background-size: 50px 50px;
-  background-image:
-    linear-gradient(to right, rgba(16, 185, 129, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+background-image:
+    linear-gradient(to right, rgba(0, 255, 136, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 255, 136, 0.04) 1px, transparent 1px);
+  mask-image: radial-gradient(circle at center, black, transparent 80%);
+  -webkit-mask-image: radial-gradient(circle at center, black, transparent 80%);
 }
 
-/* Suble Glow Box */
+/* Subtle Glow Box */
 .glow-box {
-  position: relative;
+position: relative;
 }
 
 .glow-box::before {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  background: linear-gradient(to bottom right, rgba(16, 185, 129, 0.5), transparent, transparent, rgba(16, 185, 129, 0.2));
-  z-index: -1;
-  border-radius: inherit;
-  transition: opacity 0.3s ease;
-  opacity: 0.5;
+content: "";
+position: absolute;
+inset: -1px;
+  background: linear-gradient(to bottom right, rgba(0, 255, 136, 0.5), transparent, transparent, rgba(0, 255, 136, 0.1));
+z-index: -1;
+border-radius: inherit;
+transition: opacity 0.3s ease;
+  opacity: 0;
 }
 
 .glow-box:hover::before {
-  opacity: 1;
+opacity: 1;
 }
 
 @layer base {
-  * {
-    @apply border-border-green;
-  }
+* {
+@apply border-border-green;
+}
 }
 
 html {
-  scroll-behavior: smooth;
+scroll-behavior: smooth;
+  background-color: var(--background);
 }
