@@ -7,18 +7,59 @@ import sys
 import requests
 from dotenv import load_dotenv
 
-# Load environment variables from .env
-load_dotenv()
+# Safe local module resolution
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
 
-# Fast2SMS configuration (loaded from .env)
-FAST2SMS_API_KEY = os.getenv("FAST2SMS_API_KEY", "")
-FAST2SMS_URL = os.getenv("FAST2SMS_URL", "https://www.fast2sms.com/dev/bulkV2")
-
-# Add current directory to path so we can import predict
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Import local predict module
 from predict import predict_yield
 
+# Load environment variables from .env
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+# httpSMS configuration (loaded from .env)
+HTTPSMS_API_KEY  = os.getenv("HTTPSMS_API_KEY", "")
+HTTPSMS_SEND_URL = "https://api.httpsms.com/v1/messages/send"
+print("HTTPSMS KEY LOADED:", bool(HTTPSMS_API_KEY))
+
 app = FastAPI(title="Agri Yield Prediction ML API")
+
+def get_coords(location):
+    url = f"https://geocoding-api.open-meteo.com/v1/search?name={location}&count=1"
+    r = requests.get(url)
+    data = r.json()
+    if not data.get("results"):
+        return None, None
+    return (
+        data["results"][0]["latitude"],
+        data["results"][0]["longitude"]
+    )
+
+def get_climate(lat, lon):
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,precipitation,shortwave_radiation,soil_moisture_0_to_1cm"
+    r = requests.get(url)
+    data = r.json()
+    current = data.get("current", {})
+    
+    # PART 1 — Fix solar handling (CRITICAL)
+    solar = current.get("shortwave_radiation")
+    if solar is None or solar < 5:
+        solar = 18.0
+        
+    # PART 2 — Fix soil handling (safety)
+    soil = current.get("soil_moisture_0_to_1cm")
+    if soil is None:
+        soil = 0.5
+
+    return {
+        "temperature": current.get("temperature_2m"),
+        "humidity": current.get("relative_humidity_2m"),
+        "rainfall": current.get("precipitation"),
+        "solar": solar,
+        "soil": soil
+    }
 
 # STEP 7 — Add CORS (important for Next.js access)
 app.add_middleware(
@@ -63,8 +104,28 @@ def predict(input_data: PredictionInput):
     try:
         # Convert Pydantic model to dict
         data = input_data.dict()
+        
+        print("\n"+"#"*80)
+        print("ML API REQUEST RECEIVED")
+        print(data)
+        print("#"*80)
+        
+        print("CLIMATE VALUES SENT TO ML:")
+        print({
+            "temperature": data.get("temperature"),
+            "rainfall": data.get("rainfall"),
+            "humidity": data.get("humidity"),
+            "solar": data.get("solar"),
+            "soil": data.get("soil")
+        })
+        
         # Call prediction function
         result = predict_yield(data)
+        
+        print("\nML API RESPONSE")
+        print(result)
+        print("#"*80)
+        
         return result
     except ValueError as e:
         # Validation errors from predict.py
@@ -95,13 +156,8 @@ def test_prediction():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ─────────────────────────────────────────────────────────────
-# SMS INTEGRATION — httpSMS webhook + sending API
-# ─────────────────────────────────────────────────────────────
-
 # httpSMS configuration (loaded from .env)
-HTTPSMS_API_KEY  = os.getenv("HTTPSMS_API_KEY", "")
-HTTPSMS_SEND_URL = "https://api.httpsms.com/v1/messages/send"
+# HTTPSMS_API_KEY and HTTPSMS_SEND_URL already defined above
 
 
 def send_sms(to_number: str, from_number: str, message: str) -> None:
@@ -169,11 +225,39 @@ async def incoming_sms(data: dict):
     # ── Log raw webhook payload ─────────────────────────────────
     print(f"[SMS-WEBHOOK] Raw data: {data}")
 
-    # ── Extract fields from httpSMS webhook structure ───────────
-    message_data = data.get("data", {})
-    sender  = message_data.get("from")
-    our_number = message_data.get("to")
-    message = message_data.get("content", "") or ""
+    # ── Extract fields from webhook structure ───────────
+    sender = None
+    our_number = None
+    message = ""
+
+    message_data = data.get("data", {}) if isinstance(data.get("data"), dict) else {}
+
+    if "contact" in message_data or "owner" in message_data:
+        # CloudEvents format (real httpSMS webhook, used from April 2025 onwards)
+        # data.contact = sender's number, data.owner = our phone number
+        sender     = message_data.get("contact")
+        our_number = message_data.get("owner")
+        message    = message_data.get("content", "") or ""
+
+    elif "from" in message_data or "to" in message_data:
+        # Legacy httpSMS format
+        sender     = message_data.get("from")
+        our_number = message_data.get("to")
+        message    = message_data.get("content", "") or ""
+
+    else:
+        # Generic/Custom Webhook fallback (flat JSON: body, from, to)
+        sender     = data.get("from")
+        our_number = data.get("to") or os.getenv("HTTPSMS_PHONE", "+910000000000")
+        message    = data.get("body", "") or ""
+
+        # If the forwarder didn't resolve {sender}, parse it from the first line
+        if sender == "{sender}" or not sender:
+            lines = message.split("\n")
+            if lines and lines[0].lower().startswith("from"):
+                sender  = lines[0].split(":", 1)[-1].strip()
+                message = "\n".join(lines[1:]).strip()
+
 
     print(f"[SMS-IN] From: {sender} | Content: {message}")
 
@@ -184,25 +268,51 @@ async def incoming_sms(data: dict):
 
     try:
         # ── Parse SMS body ──────────────────────────────────────
-        parts = message.upper().strip().split()
+        parts = message.strip().split()
         if len(parts) < 4:
             raise ValueError(f"Expected ≥4 tokens, got {len(parts)}: {parts}")
 
-        crop  = parts[0].capitalize()   # e.g. "Rice"
-        month = parts[2].capitalize()   # e.g. "June"
-        area  = float(parts[3])         # e.g. 1.0
+        crop     = parts[0].capitalize()   # e.g. "Rice"
+        district = parts[1].capitalize()   # e.g. "Malda"
+        month    = parts[2].capitalize()   # e.g. "June"
+        area     = float(parts[3])         # e.g. 1.0
 
-        # District hardcoded for now
-        district = "South 24 Parganas"
+        print(f"[SMS-PARSE] crop={crop}, district={district}, month={month}, area={area}")
 
-        print(f"[SMS-PARSE] crop={crop}, month={month}, area={area}, district={district}")
+        # ── Get Climate for SMS ─────────────────────────────────
+        lat, lon = get_coords(district)
+        if lat is None:
+            print(f"[SMS-COORD] Coords not found for {district}, using fallback lat/lon")
+            lat, lon = 22.5726, 88.3639 # Kolkata fallback
+        
+        climate = get_climate(lat, lon)
+        print("SMS CLIMATE AFTER FIX:", climate)
+
+        print("\nSMS PIPELINE INPUT")
+        print({
+            "crop": crop,
+            "district": district,
+            "area": area,
+            "month": month,
+            "climate": climate
+        })
+
+        # PART 8 — Add solar consistency debug
+        print("Solar used:", climate["solar"])
 
         # ── Run ML prediction ───────────────────────────────────
         result = predict_yield({
-            "crop":     crop,
-            "district": district,
-            "area":     area,
-            "month":    month,
+            "crop":        crop,
+            "district":    district,
+            "area":        area,
+            "month":       month,
+            "temperature": climate["temperature"],
+            "rainfall":    climate["rainfall"],
+            "humidity":    climate["humidity"],
+            "solar":       climate["solar"],
+            "soil":        climate["soil"],
+            "lat":         lat,
+            "lon":         lon
         })
 
         print(f"[SMS-PREDICT] Result: {result}")
@@ -238,5 +348,5 @@ async def incoming_sms(data: dict):
 # STEP 8 — Add server runner
 if __name__ == "__main__":
     import uvicorn
-    # Use "api:app" so reload works correctly
+    # Now treated as a local module
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
