@@ -1,3 +1,23 @@
+import { motion } from "framer-motion";
+import { MapPin, Sprout, TrendingUp } from "lucide-react";
+
+const steps = [
+  {
+    title: "Input Data",
+    description: "Enter your farm location, soil type, and target crop.",
+    icon: MapPin
+  },
+  {
+    title: "AI Analysis",
+    description: "Our engine processes climate and soil data for personalized recommendations.",
+    icon: Sprout
+  },
+  {
+    title: "Maximize Yield",
+    description: "Follow the guided timeline to optimize farming practices and increase profit.",
+    icon: TrendingUp
+  }
+];
 
 const HowItWorks = () => {
 return (
@@ -34,7 +54,6 @@ viewport={{ once: true, margin: "-100px" }}
 className="h-full bg-gradient-to-r from-transparent via-accent-green to-transparent"
 />
 </div>
-@@ -69,27 +66,27 @@ const HowItWorks = () => {
 {steps.map((step, index) => (
 <motion.div
 key={index}
@@ -62,3 +81,10 @@ className="flex flex-col items-center text-center group"
 {step.description}
 </p>
 </motion.div>
+))}
+</div>
+</div>
+</section>
+);
+};
+export default HowItWorks;

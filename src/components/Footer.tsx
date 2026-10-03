@@ -1,3 +1,4 @@
+import Link from "next/link";
 
 const Footer = () => {
 return (
@@ -55,3 +56,7 @@ Precision farming through advanced climate intelligence.
 </div>
 </div>
 </div>
+</footer>
+  );
+};
+export default Footer;

@@ -1,3 +1,5 @@
+import { motion } from "framer-motion";
+import { ArrowRight } from "lucide-react";
 
 const CTA = () => {
 return (
@@ -36,3 +38,8 @@ Create Free Account
 </motion.button>
 </div>
 </motion.div>
+</div>
+</section>
+  );
+};
+export default CTA;

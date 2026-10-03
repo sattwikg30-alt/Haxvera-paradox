@@ -142,3 +142,12 @@ Moderate
 </p>
 </div>
 </div>
+</div>
+</motion.div>
+</motion.div>
+</div>
+</div>
+</section>
+  );
+};
+export default Hero;
