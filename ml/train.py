@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import os
 import joblib
+import json
+from datetime import datetime
 from sklearn.model_selection import train_test_split, cross_val_score, KFold
 from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
@@ -102,6 +104,89 @@ def prepare_features(df):
     print(f"Debug - Max Area (log): {df['Area'].max():.4f}")
     
     return df
+
+def compare_missing_data_strategies(df, feature_cols):
+    """
+    Compares two strategies for handling missing climate data.
+    Strategy A: Mean imputation
+    Strategy B: Drop rows
+    """
+    print("\nMISSING DATA STRATEGY COMPARISON")
+    print("-" * 40)
+
+    climate_cols = [
+        'season_temperature',
+        'season_rainfall',
+        'season_humidity',
+        'season_solar',
+        'season_soil'
+    ]
+
+    df_missing = df.copy()
+
+    # Simulate missing data (5%)
+    for col in climate_cols:
+        mask = np.random.rand(len(df_missing)) < 0.05
+        df_missing.loc[mask, col] = np.nan
+
+    print("Simulated missing values added")
+
+    # Strategy A — Mean imputation
+    df_mean = df_missing.copy()
+    for col in climate_cols:
+        df_mean[col] = df_mean[col].fillna(df_mean[col].mean())
+    print("Mean imputation applied")
+
+    # Strategy B — Drop rows
+    df_drop = df_missing.dropna(subset=climate_cols)
+    print("Drop strategy applied")
+
+    # Evaluate both
+    target = 'yield_relative'
+    latest_year = int(df['year'].max())
+    
+    # Simple evaluation using latest year as test
+    train_mean = df_mean[df_mean['year'] < latest_year]
+    train_drop = df_drop[df_drop['year'] < latest_year]
+
+    X_mean = train_mean[feature_cols]
+    y_mean = train_mean[target]
+    X_drop = train_drop[feature_cols]
+    y_drop = train_drop[target]
+
+    params = {
+        'n_estimators': 100,
+        'max_depth': 10,
+        'random_state': 42,
+        'n_jobs': -1
+    }
+
+    mean_cv = compute_absolute_cv(
+        RandomForestRegressor,
+        params,
+        X_mean,
+        y_mean,
+        train_mean['crop_mean'].values
+    )
+
+    drop_cv = compute_absolute_cv(
+        RandomForestRegressor,
+        params,
+        X_drop,
+        y_drop,
+        train_drop['crop_mean'].values
+    )
+
+    print("\nMissing data strategy results:")
+    print(f"Mean imputation CV (Absolute R2): {mean_cv:.4f}")
+    print(f"Drop rows CV (Absolute R2): {drop_cv:.4f}")
+
+    if mean_cv > drop_cv:
+        print("BEST STRATEGY: Mean imputation")
+    else:
+        print("BEST STRATEGY: Drop rows")
+
+    return mean_cv, drop_cv
 
 def compute_absolute_cv(model_class, params, X, y_relative, crop_means):
     """
@@ -292,11 +377,30 @@ def evaluate_model(model_q20, model_q50, model_q80, point_model, model_name, X_t
     # PART 7 — Interval Calibration (0.2 to 0.8)
     inside = (y_test_original >= yield_q20) & (y_test_original <= yield_q80)
     coverage = inside.mean()
-    print(f"Interval coverage (0.2 to 0.8): {coverage:.4f}")
     
+    # PART 3 — Add uncertainty calibration report
     expected = 0.6
     calibration_error = abs(coverage - expected)
+    
+    print("\nUNCERTAINTY CALIBRATION")
+    print("------------------------")
+    print("Expected coverage:", expected)
+    print("Actual coverage:", coverage)
     print("Calibration error:", calibration_error)
+    
+    if calibration_error < 0.05:
+        print("Calibration quality: GOOD")
+    elif calibration_error < 0.1:
+        print("Calibration quality: ACCEPTABLE")
+    else:
+        print("Calibration quality: POOR")
+        
+    # PART 4 — Add simple calibration histogram (text)
+    interval_sizes = yield_q80 - yield_q20
+    print("\nUNCERTAINTY WIDTH SUMMARY")
+    print("Mean width:", interval_sizes.mean())
+    print("Median width:", np.median(interval_sizes))
+    print("Max width:", interval_sizes.max())
     
     # STEP 11 — Better uncertainty scaling
     interval_width = yield_q80 - yield_q20
@@ -473,6 +577,32 @@ def save_models(model_q20, model_q50, model_q80, point_model, features, feature_
     
     joblib.dump(features, feature_cols_path)
 
+def save_model_metadata(df, feature_cols):
+    """
+    Saves metadata about the model version, dataset, and features.
+    """
+    metadata = {
+        "training_date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "dataset_rows": int(len(df)),
+        "features": feature_cols,
+        "num_features": len(feature_cols),
+        "years_used": sorted(df["year"].unique().tolist()),
+        "model_type": "Quantile RandomForest Hybrid",
+        "target": "relative yield",
+        "climate_features": [
+            'season_temperature',
+            'season_rainfall',
+            'season_humidity',
+            'season_solar',
+            'season_soil'
+        ]
+    }
+
+    with open("ml/model_metadata.json", "w") as f:
+        json.dump(metadata, f, indent=4)
+
+    print("Model metadata saved")
+
 def main():
     data_path = os.path.join('ml', 'data', 'final_dataset.csv')
     model_path = os.path.join('ml', 'model.pkl')
@@ -504,6 +634,9 @@ def main():
         # PART 11 — Ablation test
         cv_no_climate = run_ablation_test(df, feature_cols, train_crop_means)
         cv_improvement = best_cv - cv_no_climate
+
+        # PART 1 — Missing data strategy comparison
+        mean_cv, drop_cv = compare_missing_data_strategies(df, feature_cols)
 
         # STEP 15: Print Comparison Table
         print("\n" + "="*50)
@@ -540,6 +673,7 @@ def main():
 
         # Step 13: Save
         save_models(model_q20, model_q50, model_q80, point_model, feature_cols, features_path)
+        save_model_metadata(df, feature_cols)
 
         # Step 12: Test
         test_prediction(model_q20, model_q50, model_q80, point_model, model_name, feature_cols, df)
