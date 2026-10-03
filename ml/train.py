@@ -5,6 +5,7 @@ import joblib
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.inspection import permutation_importance
 
 def load_data(file_path):
     """Loads the dataset and prints basic info."""
@@ -196,16 +197,42 @@ def evaluate_model(model, model_name, X_test, y_test_log, y_test_original):
     print(f"MAE: {mae:.4f}")
     print(f"RMSE: {rmse:.4f}")
     
-    # Feature Importance (RF only)
-    if model_name == "RF":
-        print("\nFeature Importance (RandomForest):")
+    # PART 7 — Feature importance measurement
+    print(f"\nFeature importance ({model_name}):")
+    if hasattr(model, 'feature_importances_'):
         importances = model.feature_importances_
+    else:
+        # Use permutation importance for models without feature_importances_ (like HGB)
+        print("Model has no feature_importances_. Calculating permutation importance (on sample)...")
+        # To speed up, we use a sample of X_test
+        sample_size = min(1000, X_test.shape[0])
+        perm_imp = permutation_importance(model, X_test[:sample_size], y_test_log[:sample_size], n_repeats=5, random_state=42)
+        importances = perm_imp.importances_mean
+
+    if importances is not None:
         feature_names = X_test.columns
-        fi_df = pd.DataFrame({'Feature': feature_names, 'Importance': importances})
-        fi_df = fi_df.sort_values(by='Importance', ascending=False)
-        print(fi_df)
+        imp_df = pd.DataFrame({'feature': feature_names, 'importance': importances})
+        imp_df = imp_df.sort_values(by='importance', ascending=False)
+        print(imp_df)
+        
+        # PART 8 — Climate importance percentage
+        climate_features = [
+            "season_temperature", "season_rainfall", "season_humidity",
+            "season_solar", "season_soil"
+        ]
+        climate_importance = imp_df[imp_df["feature"].isin(climate_features)]["importance"].sum()
+        print(f"\nTotal climate importance: {climate_importance:.4f}")
+        print(f"Climate importance %: {climate_importance * 100:.2f}%")
+        
+        # PART 9 — Compare environmental vs structural features
+        for feat in ["Area", "district_code", "crop_code"]:
+            val = imp_df[imp_df["feature"] == feat]
+            if not val.empty:
+                print(f"{feat} importance: {val['importance'].values[0]:.4f}")
+        
+        return r2, mae, rmse, climate_importance * 100
     
-    return r2, mae, rmse
+    return r2, mae, rmse, 0
 
 def save_model(model, features, model_path, features_path):
     """Saves the model and feature column order."""
@@ -264,6 +291,37 @@ def test_prediction(model, model_name, feature_columns):
         print(f"Predicted yield: {yield_pred:.4f} ton/hectare")
         print("Uncertainty skip for HGB (as per instructions)")
 
+def run_ablation_test(df, feature_cols):
+    """
+    PART 11 — Add final climate contribution test
+    Trains a model without climate features and compares CV.
+    """
+    print("\nRunning climate ablation test...")
+    climate_features = [
+        "season_temperature", "season_rainfall", "season_humidity",
+        "season_solar", "season_soil"
+    ]
+    
+    # Structural features only
+    X_no_climate_cols = [c for c in feature_cols if c not in climate_features]
+    
+    # Quick RF for ablation
+    model_ablation = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
+    
+    target = 'log_yield'
+    latest_year = int(df['year'].max())
+    train_df = df[df['year'] < latest_year].copy()
+    
+    X_train_no = train_df[X_no_climate_cols]
+    y_train = train_df[target]
+    
+    print("Running CV without climate features...")
+    scores_no = cross_val_score(model_ablation, X_train_no, y_train, cv=5)
+    cv_no = scores_no.mean()
+    print(f"CV without climate: {cv_no:.4f}")
+    
+    return cv_no
+
 def main():
     data_path = os.path.join('ml', 'data', 'final_dataset.csv')
     model_path = os.path.join('ml', 'model.pkl')
@@ -272,6 +330,12 @@ def main():
     try:
         # Step 1 & 2: Load and Prepare
         df = load_data(data_path)
+        
+        # PART 10 — Climate variance sanity check
+        print("\nClimate variance sanity check:")
+        climate_cols = ["season_temperature", "season_rainfall", "season_humidity", "season_solar", "season_soil"]
+        print(df[climate_cols].std())
+        
         df = prepare_features(df)
 
         # Step 3: Split
@@ -279,9 +343,14 @@ def main():
 
         # Step 5, 6, 7, 8: Train Best Model
         model, model_name, rf_cv, hgb_cv = train_best_model(X_train, y_train)
+        best_cv = max(rf_cv, hgb_cv)
 
         # Step 9, 10, 11: Evaluate
-        r2, mae, rmse = evaluate_model(model, model_name, X_test, y_test, y_test_original)
+        r2, mae, rmse, climate_imp_pct = evaluate_model(model, model_name, X_test, y_test, y_test_original)
+
+        # PART 11 — Ablation test
+        cv_no_climate = run_ablation_test(df, feature_cols)
+        cv_improvement = best_cv - cv_no_climate
 
         # STEP 15: Print Comparison Table
         print("\n" + "="*50)
@@ -291,6 +360,14 @@ def main():
         print(f"{'HGB':<10} | {hgb_cv:<8.4f} | {'-':<8} | {'-':<8} | {'-'}")
         print(f"{'SELECTED':<10} | {'':<8} | {r2:<8.4f} | {mae:<8.4f} | {rmse:<8.4f}")
         print("="*50)
+
+        # PART 12 — Final reporting
+        print("\nFINAL REPORTING SUMMARY")
+        print("-" * 30)
+        # Note: These values would ideally come from merge_datasets.py but we print them here based on expectation
+        print(f"Climate importance %: {climate_imp_pct:.2f}%")
+        print(f"CV improvement: {cv_improvement:+.4f}")
+        print("-" * 30)
 
         # Step 13: Save
         save_model(model, feature_cols, model_path, features_path)
@@ -302,6 +379,8 @@ def main():
 
     except Exception as e:
         print(f"An error occurred during training: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()

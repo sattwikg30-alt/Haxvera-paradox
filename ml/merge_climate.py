@@ -43,9 +43,9 @@ def process_climate_df(df, value_type):
     df[f'summer_{value_type}'] = df[summer_months].mean(axis=1)
     df[f'year_{value_type}'] = df[all_months].mean(axis=1)
 
-    # 4. Group by YEAR to get one record per year
+    # 4. Group by YEAR, LAT, LON to get record per grid per year (STEP 5)
     seasonal_cols = [f'kharif_{value_type}', f'rabi_{value_type}', f'summer_{value_type}', f'year_{value_type}']
-    df_seasonal = df.groupby('YEAR')[seasonal_cols].mean().reset_index()
+    df_seasonal = df.groupby(['YEAR', 'LAT', 'LON'])[seasonal_cols].mean().reset_index()
     
     # Rename YEAR to year
     df_seasonal = df_seasonal.rename(columns={'YEAR': 'year'})
@@ -58,48 +58,48 @@ def merge_climate_data():
     """
     data_dir = os.path.join('ml', 'data')
     
-    # Load files (STEP 2)
+    # Load files
     temp_df = load_climate_file(os.path.join(data_dir, 'temp.csv'))
     rain_df = load_climate_file(os.path.join(data_dir, 'rainfall.csv'))
     hum_df = load_climate_file(os.path.join(data_dir, 'humidity.csv'))
     solar_df = load_climate_file(os.path.join(data_dir, 'irradiance.csv'))
     soil_df = load_climate_file(os.path.join(data_dir, 'soilwetness.csv'))
 
-    # Process seasonal features for each type (STEP 2)
+    # Process seasonal features for each type
     temp_processed = process_climate_df(temp_df, 'temp')
     rain_processed = process_climate_df(rain_df, 'rainfall')
     hum_processed = process_climate_df(hum_df, 'humidity')
     solar_processed = process_climate_df(solar_df, 'solar')
     soil_processed = process_climate_df(soil_df, 'soil')
 
-    # Merge all into one climate table (STEP 3)
-    climate_final = temp_processed.merge(rain_processed, on='year', how='outer')
-    climate_final = climate_final.merge(hum_processed, on='year', how='outer')
-    climate_final = climate_final.merge(solar_processed, on='year', how='outer')
-    climate_final = climate_final.merge(soil_processed, on='year', how='outer')
+    # Merge all into one climate table spatially (STEP 5)
+    climate_spatial = temp_processed.merge(rain_processed, on=['year', 'LAT', 'LON'], how='outer')
+    climate_spatial = climate_spatial.merge(hum_processed, on=['year', 'LAT', 'LON'], how='outer')
+    climate_spatial = climate_spatial.merge(solar_processed, on=['year', 'LAT', 'LON'], how='outer')
+    climate_spatial = climate_spatial.merge(soil_processed, on=['year', 'LAT', 'LON'], how='outer')
 
     # Handle missing values with column mean (STEP 4)
-    for col in climate_final.columns:
-        if col != 'year' and climate_final[col].isnull().any():
-            climate_final[col] = climate_final[col].fillna(climate_final[col].mean())
+    for col in climate_spatial.columns:
+        if col not in ['year', 'LAT', 'LON'] and climate_spatial[col].isnull().any():
+            climate_spatial[col] = climate_spatial[col].fillna(climate_spatial[col].mean())
 
-    return climate_final.sort_values('year')
+    return climate_spatial.sort_values(['year', 'LAT', 'LON'])
 
 def main():
-    output_path = os.path.join('ml', 'data', 'climate_final.csv')
+    output_path = os.path.join('ml', 'data', 'climate_spatial.csv')
 
     try:
-        # Generate seasonal climate features
-        climate_final = merge_climate_data()
+        # Generate spatial climate features
+        climate_spatial = merge_climate_data()
 
-        # Save the seasonal climate table
-        print(f"Saving seasonal climate data to {output_path}...")
-        climate_final.to_csv(output_path, index=False)
+        # Save the spatial climate table
+        print(f"Saving spatial climate data to {output_path}...")
+        climate_spatial.to_csv(output_path, index=False)
 
-        print("\nSuccess: Seasonal climate processing complete!")
-        print(f"Columns: {', '.join(climate_final.columns)}")
+        print("\nSuccess: Spatial climate processing complete!")
+        print(f"Columns: {', '.join(climate_spatial.columns)}")
         print("\nPreview:")
-        print(climate_final.head())
+        print(climate_spatial.head())
 
     except Exception as e:
         print(f"An error occurred: {e}")
