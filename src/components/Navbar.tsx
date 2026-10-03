@@ -1,53 +1,80 @@
+"use client";
+
 import Link from "next/link";
 
 const Navbar = () => {
-return (
-    <nav className="fixed top-0 left-0 right-0 z-50 glass-navbar transition-all duration-300 border-b border-white/5">
-<div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-{/* Logo */}
+  return (
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-md border-b border-white/10 transition-all duration-300">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        {/* Logo */}
         <Link href="/" className="text-2xl font-bold tracking-tighter flex items-center group">
           <div>
-            <span className="text-white">Herve</span>
-            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.4)]">xa</span>
+            <span className="text-white drop-shadow-md">Agri</span>
+            <span className="text-green-400 drop-shadow-md">Go</span>
           </div>
-</Link>
+        </Link>
 
-{/* Navigation Links */}
-<div className="hidden md:flex items-center gap-8">
-<Link
-href="#features"
-            className="text-sm font-medium text-text-secondary hover:text-white transition-colors"
->
-Features
-</Link>
-<Link
-href="#how-it-works"
-            className="text-sm font-medium text-text-secondary hover:text-white transition-colors"
->
-How it works
-</Link>
-<Link
-            href="/signin"
-            className="text-sm font-medium text-text-secondary hover:text-white transition-colors"
->
-Login
-</Link>
-<Link
+        {/* Navigation Links */}
+        <div className="hidden md:flex items-center gap-8">
+          <Link
+            href="/"
+            className="text-sm font-medium text-gray-200 hover:text-white transition-colors drop-shadow-sm"
+          >
+            Home
+          </Link>
+          <Link
+            href="#features"
+            className="text-sm font-medium text-gray-200 hover:text-white transition-colors drop-shadow-sm"
+          >
+            Features
+          </Link>
+          <Link
+            href="#how-it-works"
+            className="text-sm font-medium text-gray-200 hover:text-white transition-colors drop-shadow-sm"
+          >
+            How it Works
+          </Link>
+          <Link
+            href="#contact"
+            className="text-sm font-medium text-gray-200 hover:text-white transition-colors drop-shadow-sm"
+          >
+            Contact
+          </Link>
+        </div>
+
+        {/* CTA Button */}
+        <div className="hidden md:block">
+          <Link
             href="/signup"
-            className="rounded-lg px-5 py-2.5 bg-accent-green hover:bg-accent-green-hover text-[#000] text-sm font-bold transition-all duration-300 shadow-[0_0_20px_rgba(0,255,136,0.2)] hover:shadow-[0_0_30px_rgba(0,255,136,0.4)] hover:-translate-y-0.5"
->
-Get Started
-</Link>
-</div>
+            className="rounded-full px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-bold transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5"
+          >
+            Get Started
+          </Link>
+        </div>
 
-{/* Mobile menu icon */}
-<div className="md:hidden">
-<button className="text-white p-2">
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-</button>
-</div>
-</div>
-</nav>
+        {/* Mobile menu icon */}
+        <div className="md:hidden">
+          <button className="text-white p-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="4" x2="20" y1="12" y2="12" />
+              <line x1="4" x2="20" y1="6" y2="6" />
+              <line x1="4" x2="20" y1="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </nav>
   );
 };
+
 export default Navbar;

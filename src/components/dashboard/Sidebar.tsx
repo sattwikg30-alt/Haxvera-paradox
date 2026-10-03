@@ -23,7 +23,7 @@ interface SidebarProps {
 
 export function Sidebar({ items, collapsed, setCollapsed, role }: SidebarProps) {
   const pathname = usePathname();
-   const router = useRouter();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
 
@@ -48,8 +48,8 @@ export function Sidebar({ items, collapsed, setCollapsed, role }: SidebarProps) 
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-white/5 px-4 relative group">
         {!collapsed && (
           <Link href="/" className="flex items-center gap-2 font-bold text-xl tracking-tight">
-            <span className="text-white">Herve</span>
-            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.3)]">xa</span>
+            <span className="text-white">Agri</span>
+            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.3)]">Go</span>
           </Link>
         )}
         {collapsed && (
@@ -108,11 +108,11 @@ export function Sidebar({ items, collapsed, setCollapsed, role }: SidebarProps) 
               <span className="truncate text-xs text-text-secondary font-medium capitalize">
                 {mounted && user?.role ? user.role : role}
               </span>
-              </div>
+            </div>
           )}
         </div>
         {!collapsed && (
-           <button 
+          <button 
             onClick={handleLogout}
             className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10 hover:border-white/20 transition-all hover:shadow-[0_0_15px_rgba(255,255,255,0.05)]"
           >

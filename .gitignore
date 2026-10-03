@@ -58,3 +58,5 @@ model_q20.pkl
 model_q50.pkl
 model_q80.pkl
 model_q90.pkl
+
+model_rf.pkl

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Sidebar, NavItem } from "@/components/dashboard/Sidebar";
 import { Topbar } from "@/components/dashboard/Topbar";
-import RoleProtectedRoute from "@/components/RoleProtected";
+import RoleProtectedRoute from "@/components/RoleProtectedRoute";
 import { 
   LayoutDashboard, 
   Users, 
@@ -14,7 +14,6 @@ import {
   FileText, 
   Settings 
 } from "lucide-react";
-import { div } from "framer-motion/client";
 
 const adminNavItems: NavItem[] = [
   { title: "Overview", href: "/admin-dashboard/overview", icon: LayoutDashboard },
@@ -32,7 +31,7 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-      <RoleProtectedRoute allowedRole="admin">
+    <RoleProtectedRoute allowedRole="admin">
       <div className="flex h-screen bg-background overflow-hidden text-white selection:bg-accent-green/30">
         {/* Mobile Sidebar Overlay */}
         {mobileOpen && (
@@ -41,7 +40,8 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
             onClick={() => setMobileOpen(false)}
           />
         )}
-          {/* Sidebar Wrapper */}
+
+        {/* Sidebar Wrapper */}
         <div 
           className={`fixed inset-y-0 left-0 z-40 transform transition-transform duration-300 md:relative md:translate-x-0 ${
             mobileOpen ? "translate-x-0" : "-translate-x-full"
@@ -55,7 +55,7 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
           />
         </div>
 
-       <div className={`flex flex-1 flex-col transition-all duration-300 ${collapsed ? "md:ml-20" : "md:ml-64"}`}>
+        <div className={`flex flex-1 flex-col transition-all duration-300 ${collapsed ? "md:ml-20" : "md:ml-64"}`}>
           <Topbar onMenuClick={() => setMobileOpen(true)} />
           <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             {children}

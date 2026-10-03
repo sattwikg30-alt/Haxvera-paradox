@@ -7,7 +7,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Hervexa | Climate-Aware Agriculture Intelligence",
+  title: "AgriGo | Climate-Aware Agriculture Intelligence",
   description: "Predict Crop Yield Before the Season Decides It",
 };
 
@@ -17,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-      <html lang="en" className="h-full antialiased" data-scroll-behavior="smooth">
+    <html lang="en" className="h-full antialiased" data-scroll-behavior="smooth">
       <body className={`${inter.className} min-h-full flex flex-col bg-[#0F2A1D] text-[#F5F7F2]`}>
         {children}
       </body>
