@@ -376,15 +376,22 @@ def train_best_model(X_train, y_train, train_crop_means):
     # PART 10 — Point model for hybrid prediction
     point_model = HistGradientBoostingRegressor(loss="squared_error", **hgb_params)
     
-    print("Fitting quantile and point models...")
+    # STEP 1: Train strong RandomForest for ensemble
+    print("Training RandomForest for ensemble...")
+    rf_model = RandomForestRegressor(**rf_params)
+    
+    print("Fitting quantile, point, and ensemble models...")
     model_q20.fit(X_train, y_train)
     model_q50.fit(X_train, y_train)
     model_q80.fit(X_train, y_train)
     point_model.fit(X_train, y_train)
+    rf_model.fit(X_train, y_train)
     
-    return model_q20, model_q50, model_q80, point_model, model_name, rf_cv, hgb_cv, hgb_params
+    print("Using RF + HGB ensemble for point prediction stability.")
+    
+    return model_q20, model_q50, model_q80, point_model, rf_model, model_name, rf_cv, hgb_cv, hgb_params
 
-def evaluate_model(model_q20, model_q50, model_q80, point_model, model_name, X_test, y_test_log, y_test_original, test_crop_means, df_full):
+def evaluate_model(model_q20, model_q50, model_q80, point_model, rf_model, model_name, X_test, y_test_log, y_test_original, test_crop_means, df_full):
     """
     Evaluates the tuned probabilistic models with quantile smoothing and calibrated metrics.
     """
@@ -404,10 +411,20 @@ def evaluate_model(model_q20, model_q50, model_q80, point_model, model_name, X_t
     yield_q50 = np.expm1(q50 + test_crop_means)
     yield_q80 = np.expm1(q80 + test_crop_means)
     
-    # PART 10 — Hybrid Prediction (Blend)
+    # PART 10 — Hybrid Ensemble Prediction (Blend)
+    # HistGradientBoosting point prediction
     q_point = point_model.predict(X_test)
     yield_point = np.expm1(q_point + test_crop_means)
-    yield_blend = (0.7 * yield_q50 + 0.3 * yield_point)
+    
+    # RandomForest point prediction
+    q_rf = rf_model.predict(X_test)
+    yield_rf = np.expm1(q_rf + test_crop_means)
+    
+    # Ensemble of point models (0.6 HGB + 0.4 RF)
+    ensemble_point = (0.6 * yield_point + 0.4 * yield_rf)
+    
+    # Final blend: 0.7 HGB Quantile Median + 0.3 Ensemble Point
+    yield_blend = (0.7 * yield_q50 + 0.3 * ensemble_point)
     
     # Evaluation Metrics using Blend/Median
     r2 = r2_score(y_test_original, yield_blend)
@@ -518,11 +535,11 @@ def evaluate_model(model_q20, model_q50, model_q80, point_model, model_name, X_t
     
     return r2, mae, rmse, climate_importance, coverage, mean_raw_width, relative_width.mean(), importance_df
 
-def test_prediction(model_q20, model_q50, model_q80, point_model, model_name, feature_columns, df_full):
+def test_prediction(model_q20, model_q50, model_q80, point_model, rf_model, model_name, feature_columns, df_full):
     """
-    Runs test prediction with tuned intervals and updated risk levels.
+    Runs test prediction with tuned intervals and updated risk levels using ensemble point prediction.
     """
-    print(f"\nRunning test prediction for {model_name} with tuned intervals...")
+    print(f"\nRunning test prediction for {model_name} + RF Ensemble with tuned intervals...")
     
     sample_data = {
         'Area': np.log1p(2.0),
@@ -558,15 +575,20 @@ def test_prediction(model_q20, model_q50, model_q80, point_model, model_name, fe
     q20 = min(q20, q50)
     q80 = max(q80, q50)
     
-    # Hybrid Prediction (Relative)
+    # Hybrid Point Prediction (Relative)
     q_point = point_model.predict(sample_df)[0]
+    q_rf = rf_model.predict(sample_df)[0]
     
     # Reconstruct absolute
     yield_q20 = np.expm1(q20 + crop_mean)
     yield_q50 = np.expm1(q50 + crop_mean)
     yield_q80 = np.expm1(q80 + crop_mean)
     yield_point = np.expm1(q_point + crop_mean)
-    yield_blend = 0.7 * yield_q50 + 0.3 * yield_point
+    yield_rf = np.expm1(q_rf + crop_mean)
+    
+    # Ensemble Logic: 0.6 HGB + 0.4 RF
+    ensemble_point = 0.6 * yield_point + 0.4 * yield_rf
+    yield_blend = 0.7 * yield_q50 + 0.3 * ensemble_point
     
     print(f"Predicted yield (Hybrid): {yield_blend:.4f} ton/hectare")
     print(f"Confidence interval (q20-q80): [{yield_q20:.2f}, {yield_q80:.2f}]")
@@ -611,17 +633,18 @@ def run_ablation_test(df, feature_cols, train_crop_means):
     
     return cv_no
 
-def save_models(model_q20, model_q50, model_q80, point_model, features, feature_cols_path):
-    """Saves all tuned probabilistic models."""
+def save_models(model_q20, model_q50, model_q80, point_model, rf_model, features, feature_cols_path):
+    """Saves all tuned probabilistic and ensemble models."""
     model_dir = os.path.join('ml', 'models')
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
         
-    print(f"\nSaving tuned quantile models to {model_dir}...")
+    print(f"\nSaving tuned models to {model_dir}...")
     joblib.dump(model_q20, os.path.join('ml', 'model_q20.pkl'))
     joblib.dump(model_q50, os.path.join('ml', 'model_q50.pkl'))
     joblib.dump(model_q80, os.path.join('ml', 'model_q80.pkl'))
     joblib.dump(point_model, os.path.join('ml', 'model_point.pkl'))
+    joblib.dump(rf_model, os.path.join('ml', 'model_rf.pkl'))
     
     joblib.dump(features, feature_cols_path)
 
@@ -672,12 +695,12 @@ def main():
         X_train, X_test, y_train, y_test, y_test_original, train_crop_means, test_crop_means, feature_cols = split_data(df)
 
         # Step 5, 6, 7, 8: Train Best Model
-        model_q20, model_q50, model_q80, point_model, model_name, rf_cv, hgb_cv, hgb_params = train_best_model(X_train, y_train, train_crop_means)
+        model_q20, model_q50, model_q80, point_model, rf_model, model_name, rf_cv, hgb_cv, hgb_params = train_best_model(X_train, y_train, train_crop_means)
         best_cv = max(rf_cv, hgb_cv)
 
         # Step 9, 10, 11: Evaluate
         r2, mae, rmse, climate_imp_pct, coverage, mean_width, rel_width, importance_df = evaluate_model(
-            model_q20, model_q50, model_q80, point_model, model_name, X_test, y_test, y_test_original, test_crop_means, df
+            model_q20, model_q50, model_q80, point_model, rf_model, model_name, X_test, y_test, y_test_original, test_crop_means, df
         )
 
         # PART 11 — Ablation test
@@ -721,11 +744,11 @@ def main():
         print("-" * 30)
 
         # Step 13: Save
-        save_models(model_q20, model_q50, model_q80, point_model, feature_cols, features_path)
+        save_models(model_q20, model_q50, model_q80, point_model, rf_model, feature_cols, features_path)
         save_model_metadata(df, feature_cols, hgb_params)
 
         # Step 12: Test
-        test_prediction(model_q20, model_q50, model_q80, point_model, model_name, feature_cols, df)
+        test_prediction(model_q20, model_q50, model_q80, point_model, rf_model, model_name, feature_cols, df)
 
         print("\nModel training complete")
 
