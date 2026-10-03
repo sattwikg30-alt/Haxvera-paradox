@@ -25,6 +25,7 @@ import {
   Sun,
   Bug
 } from "lucide-react";
+import { getUser } from "@/lib/authClient";
 
 // Dummy Data
 const yieldData = [
@@ -52,11 +53,12 @@ const alerts = [
 ];
 
 export default function FarmerOverview() {
+  const user = getUser();
   return (
     <div className="space-y-6">
       <div className="relative">
         <h1 className="text-2xl font-bold tracking-tight text-white mb-1">Dashboard Overview</h1>
-        <p className="text-sm text-text-secondary">Welcome back. Here is the latest data for your farm.</p>
+                <p className="text-sm text-text-secondary">Welcome back, {user?.name || "User"}. Here is the latest data for your farm.</p>
         
         {/* Decorative background glow */}
         <div className="absolute top-0 right-10 w-64 h-64 bg-accent-green/10 blur-[100px] rounded-full pointer-events-none -z-10" />

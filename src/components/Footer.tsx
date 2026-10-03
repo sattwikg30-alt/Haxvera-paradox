@@ -9,8 +9,8 @@ return (
 <div className="md:col-span-1">
             <Link href="/" className="text-2xl font-bold tracking-tighter inline-flex items-center mb-4 group">
               <div>
-                <span className="text-white">Agri</span>
-                <span className="text-accent-green">Go</span>
+                <span className="text-white">Herve</span>
+                <span className="text-accent-green">xa</span>
               </div>
 </Link>
             <p className="text-sm text-text-secondary leading-relaxed font-light">
@@ -47,7 +47,7 @@ Precision farming through advanced climate intelligence.
 
 <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-xs text-text-secondary/60">
-© {new Date().getFullYear()} AgriGo Intelligence. All rights reserved.
+© {new Date().getFullYear()} Hervexa Intelligence. All rights reserved.
 </p>
 <div className="flex items-center gap-6">
             <Link href="#" className="text-xs font-semibold text-text-secondary hover:text-white transition-colors">Twitter</Link>

@@ -24,7 +24,7 @@ className="flex flex-col gap-8"
 >
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-accent-green/10 border border-accent-green/20 w-fit mb-2 shadow-[0_0_15px_rgba(0,255,136,0.1)]">
               <span className="w-2 h-2 rounded-full bg-accent-green shadow-[0_0_8px_rgba(0,255,136,0.8)]" />
-              <span className="text-xs font-bold text-accent-green uppercase tracking-wider">Agrigo 2.0 Live</span>
+              <span className="text-xs font-bold text-accent-green uppercase tracking-wider">Hervexa 2.0 Live</span>
 </div>
 
             <h1 className="text-5xl lg:text-7xl font-bold tracking-tighter leading-[1.05] text-white">

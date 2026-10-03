@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { LogOut, PanelLeftClose, PanelLeft } from "lucide-react";
+import { getUser, logout, AuthUser } from "@/lib/authClient";
+import { useEffect, useState } from "react";
 
 export interface NavItem {
   title: string;
@@ -20,6 +23,19 @@ interface SidebarProps {
 
 export function Sidebar({ items, collapsed, setCollapsed, role }: SidebarProps) {
   const pathname = usePathname();
+   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+    setUser(getUser());
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    router.push("/signin");
+  };
 
   return (
     <aside
@@ -32,8 +48,8 @@ export function Sidebar({ items, collapsed, setCollapsed, role }: SidebarProps) 
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-white/5 px-4 relative group">
         {!collapsed && (
           <Link href="/" className="flex items-center gap-2 font-bold text-xl tracking-tight">
-            <span className="text-white">Agri</span>
-            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.3)]">Go</span>
+            <span className="text-white">Herve</span>
+            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.3)]">xa</span>
           </Link>
         )}
         {collapsed && (
@@ -81,18 +97,25 @@ export function Sidebar({ items, collapsed, setCollapsed, role }: SidebarProps) 
       {/* Profile */}
       <div className="border-t border-white/5 p-4 bg-white/[0.01]">
         <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-green/10 text-accent-green font-bold border border-accent-green/20">
-            DU
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-green/10 text-accent-green font-bold border border-accent-green/20 uppercase">
+            {mounted && user?.name?.[0] ? user.name[0] : "U"}
           </div>
           {!collapsed && (
             <div className="flex flex-1 flex-col truncate">
-              <span className="truncate text-sm font-bold text-white tracking-wide">Demo User</span>
-              <span className="truncate text-xs text-text-secondary font-medium">{role}</span>
-            </div>
+              <span className="truncate text-sm font-bold text-white tracking-wide">
+                {mounted && user?.name ? user.name : "User"}
+              </span>
+              <span className="truncate text-xs text-text-secondary font-medium capitalize">
+                {mounted && user?.role ? user.role : role}
+              </span>
+              </div>
           )}
         </div>
         {!collapsed && (
-          <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10 hover:border-white/20 transition-all hover:shadow-[0_0_15px_rgba(255,255,255,0.05)]">
+           <button 
+            onClick={handleLogout}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:bg-white/10 hover:border-white/20 transition-all hover:shadow-[0_0_15px_rgba(255,255,255,0.05)]"
+          >
             <LogOut size={16} />
             Logout
           </button>

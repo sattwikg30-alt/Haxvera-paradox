@@ -7,8 +7,8 @@ return (
 {/* Logo */}
         <Link href="/" className="text-2xl font-bold tracking-tighter flex items-center group">
           <div>
-            <span className="text-white">Agri</span>
-            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.4)]">Go</span>
+            <span className="text-white">Herve</span>
+            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.4)]">xa</span>
           </div>
 </Link>
 

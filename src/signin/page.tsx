@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import FormInput from "@/components/FormInput";
 
 export default function SignIn() {
+    const router = useRouter();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -26,21 +28,53 @@ export default function SignIn() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
 
     setIsSubmitting(true);
+    setErrors({});
     
     // Fake backend call
-    setTimeout(() => {
-      console.log("Login Attempt:", formData);
-      setIsSubmitting(false);
+    try {
+      const response = await fetch("/api/auth/signin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Invalid credentials");
+      }
+
+      // Store token and user in localStorage
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify({
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+      }));
+
+      // Store token in cookie for middleware
+      document.cookie = `token=${data.token}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
       setIsSuccess(true);
-      
-      // Usually redirect here
-      // router.push("/dashboard");
-    }, 1500);
+      // Redirect to dashboard after a short delay
+      setTimeout(() => {
+        router.push("/dashboard/overview");
+      }, 1500);
+    } catch (err: any) {
+      setErrors({ form: err.message });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const isFormValid = formData.email && formData.password;
@@ -72,8 +106,8 @@ export default function SignIn() {
         {/* Brand */}
         <div className="flex justify-center mb-8">
           <Link href="/" className="text-3xl font-bold tracking-tighter flex items-center group">
-            <span className="text-white">Agri</span>
-            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.4)]">Go</span>
+            <span className="text-white">Herve</span>
+            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.4)]">xa</span>
           </Link>
         </div>
 
@@ -100,10 +134,7 @@ export default function SignIn() {
                 <h3 className="text-xl font-bold text-white">Signed In Successfully</h3>
                 <p className="text-text-secondary text-sm mb-4">Redirecting to your dashboard...</p>
                 
-                {/* Temp reset for demo */}
-                <button onClick={() => setIsSuccess(false)} className="text-accent-green text-sm hover:underline">
-                  Sign in again (Demo)
-                </button>
+                
               </motion.div>
             ) : (
               <motion.form 
@@ -114,6 +145,11 @@ export default function SignIn() {
                 onSubmit={handleSubmit} 
                 className="flex flex-col gap-5"
               >
+                 {errors.form && (
+                  <div className="bg-red-500/10 border border-red-500/50 text-red-500 text-sm p-3 rounded-xl text-center">
+                    {errors.form}
+                  </div>
+                )}
                 <FormInput
                   id="email"
                   label="Email"
