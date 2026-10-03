@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# scripts
+scripts/create-placeholders.js
+
+build.log
+
+build8.log
+
+
+__pycache__/
+*.pyc
+model.pkl
+features.pkl
