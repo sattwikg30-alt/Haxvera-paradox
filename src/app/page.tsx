@@ -21,3 +21,9 @@ return (
 <Navbar />
 <Hero />
 <Features />
+<HowItWorks />
+      <CTA />
+      <Footer />
+    </main>
+  );
+}
