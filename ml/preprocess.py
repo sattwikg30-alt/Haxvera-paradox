@@ -41,6 +41,27 @@ def process_features(df):
     useful_columns = ['year', 'District_Name', 'Crop', 'Season', 'Area', 'yield']
     df = df[useful_columns].copy()
 
+    # STEP 1-8: Crop filtering logic
+    print("Filtering rare crops...")
+    crop_counts = df["Crop"].value_counts()
+    print("Total crops before filtering:", len(crop_counts))
+    
+    threshold = 1000
+    valid_crops = crop_counts[crop_counts >= threshold].index
+    
+    original_rows = len(df)
+    df = df[df["Crop"].isin(valid_crops)]
+    
+    print("Rows before crop filtering:", original_rows)
+    print("Rows after crop filtering:", len(df))
+    print("Crops remaining:", df["Crop"].nunique())
+    
+    print("Top crops after filtering:")
+    print(df["Crop"].value_counts().head(20))
+    
+    if len(df) == 0:
+        raise Exception("All crops removed. Lower threshold.")
+
     # STEP 2: Custom Season Encoding to match merge_datasets logic
     # 0 -> Kharif (Kharif, Autumn)
     # 1 -> Rabi (Rabi, Winter)

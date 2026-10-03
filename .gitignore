@@ -52,3 +52,5 @@ __pycache__/
 *.pyc
 model.pkl
 features.pkl
+
+package-lock.json
