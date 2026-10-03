@@ -29,7 +29,7 @@ const Footer = () => {
                 <Leaf className="text-[#E0D203] group-hover:text-[#01754C] transition-colors" size={24} />
               </div>
               <span className="text-4xl font-black tracking-tighter text-white">
-                Agri<span className="text-[#A5CE00]">Go</span>
+                Hax<span className="text-[#A5CE00]">vera</span>
               </span>
             </Link>
             <p className="text-[15px] text-white/90 leading-relaxed font-light mb-10 max-w-sm drop-shadow-md">
@@ -54,7 +54,7 @@ const Footer = () => {
                 <div className="w-10 h-10 rounded-full bg-black/20 border border-white/10 flex items-center justify-center group-hover:bg-[#E0D203] group-hover:border-[#E0D203] transition-all duration-300 shadow-md">
                   <Mail size={18} className="text-[#A5CE00] group-hover:text-[#01754C] transition-colors" />
                 </div>
-                <span className="text-sm font-medium opacity-90 group-hover:opacity-100 transition-opacity">hello@agrigo.com</span>
+                <span className="text-sm font-medium opacity-90 group-hover:opacity-100 transition-opacity">hello@haxvera.com</span>
               </div>
             </div>
           </div>
@@ -114,7 +114,7 @@ const Footer = () => {
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-white/20 flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
           <p className="text-xs font-medium text-white/70">
-            © {new Date().getFullYear()} AgriGo Intelligence. All rights globally reserved.
+            © {new Date().getFullYear()} Haxvera Intelligence. All rights globally reserved.
           </p>
           
           <div className="flex items-center gap-4">

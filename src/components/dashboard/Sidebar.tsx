@@ -48,13 +48,13 @@ export function Sidebar({ items, collapsed, setCollapsed, role }: SidebarProps) 
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-white/5 px-4 relative group">
         {!collapsed && (
           <Link href="/" className="flex items-center gap-2 font-bold text-xl tracking-tight">
-            <span className="text-white">Agri</span>
-            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.3)]">Go</span>
+            <span className="text-white">Hax</span>
+            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.3)]">vera</span>
           </Link>
         )}
         {collapsed && (
           <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-accent-green/20 text-accent-green font-bold border border-accent-green/30 shadow-[0_0_15px_rgba(0,255,136,0.2)]">
-            A
+            H
           </div>
         )}
         <button

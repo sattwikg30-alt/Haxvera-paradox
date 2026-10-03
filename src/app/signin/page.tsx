@@ -107,8 +107,8 @@ export default function SignIn() {
         {/* Brand */}
         <div className="flex justify-center mb-8">
           <Link href="/" className="text-3xl font-bold tracking-tighter flex items-center group">
-            <span className="text-white">Agri</span>
-            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.4)]">Go</span>
+            <span className="text-white">Hax</span>
+            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.4)]">vera</span>
           </Link>
         </div>
 

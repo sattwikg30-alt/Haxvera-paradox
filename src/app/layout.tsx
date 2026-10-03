@@ -7,7 +7,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "AgriGo | Climate-Aware Agriculture Intelligence",
+  title: "Haxvera | Climate-Aware Agriculture Intelligence",
   description: "Predict Crop Yield Before the Season Decides It",
 };
 

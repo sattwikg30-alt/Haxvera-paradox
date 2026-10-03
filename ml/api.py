@@ -29,7 +29,7 @@ HTTPSMS_API_KEY  = os.getenv("HTTPSMS_API_KEY", "")
 HTTPSMS_SEND_URL = "https://api.httpsms.com/v1/messages/send"
 print("HTTPSMS KEY LOADED:", bool(HTTPSMS_API_KEY))
 
-app = FastAPI(title="Agri Yield Prediction ML API")
+app = FastAPI(title="Haxvera Yield Prediction ML API")
 
 # In-memory dedup set — prevents double SMS when httpSMS fires the
 # same 'message.phone.received' event more than once (receive + sync).

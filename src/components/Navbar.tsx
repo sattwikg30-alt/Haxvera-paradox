@@ -9,8 +9,8 @@ const Navbar = () => {
         {/* Logo */}
         <Link href="/" className="text-2xl font-bold tracking-tighter flex items-center group">
           <div>
-            <span className="text-white drop-shadow-md">Agri</span>
-            <span className="text-green-400 drop-shadow-md">Go</span>
+            <span className="text-white drop-shadow-md">Hax</span>
+            <span className="text-green-400 drop-shadow-md">vera</span>
           </div>
         </Link>
 

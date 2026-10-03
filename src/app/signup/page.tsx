@@ -116,8 +116,8 @@ export default function SignUp() {
         {/* Brand */}
         <div className="flex justify-center mb-8">
           <Link href="/" className="text-3xl font-bold tracking-tighter flex items-center group">
-            <span className="text-white">Agri</span>
-            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.4)]">Go</span>
+            <span className="text-white">Hax</span>
+            <span className="text-accent-green drop-shadow-[0_0_10px_rgba(0,255,136,0.4)]">vera</span>
           </Link>
         </div>
 
@@ -126,7 +126,7 @@ export default function SignUp() {
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
           
           <div className="mb-8 text-center">
-            <h1 className="text-2xl md:text-3xl font-bold text-white mb-2 tracking-tight">Create your AgriGo account</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-white mb-2 tracking-tight">Create your Haxvera account</h1>
             <p className="text-text-secondary text-sm md:text-base font-light max-w-md mx-auto">
               Start using climate-aware yield prediction and farming insights.
             </p>
@@ -145,7 +145,7 @@ export default function SignUp() {
                 </div>
                 <h3 className="text-2xl font-bold text-white">Account Created!</h3>
                 <p className="text-text-secondary text-sm mb-6 max-w-sm">
-                  Welcome to AgriGo. Your account has been successfully registered.
+                  Welcome to Haxvera. Your account has been successfully registered.
                 </p>
                 <p className="text-text-secondary text-sm mb-4">Redirecting to your dashboard...</p>
                 
