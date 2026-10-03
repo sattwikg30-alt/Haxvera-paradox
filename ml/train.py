@@ -10,6 +10,7 @@ from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from sklearn.inspection import permutation_importance
 
 from sklearn.preprocessing import StandardScaler
+import optuna
 
 def load_data(file_path):
     """Loads the dataset and prints basic info."""
@@ -264,6 +265,43 @@ def split_data(df):
     
     return X_train, X_test, y_train, y_test, y_test_original, train_crop_means, test_crop_means, feature_cols
 
+def optimize_hgb(X_train, y_train, train_crop_means):
+    """
+    Optimizes HistGradientBoostingRegressor hyperparameters using Optuna.
+    """
+    print("\nStarting hyperparameter optimization with Optuna...")
+    
+    def objective(trial):
+        params = {
+            'max_iter': trial.suggest_int('max_iter', 200, 600),
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1, log=True),
+            'max_depth': trial.suggest_int('max_depth', 4, 12),
+            'min_samples_leaf': trial.suggest_int('min_samples_leaf', 10, 80),
+            'l2_regularization': trial.suggest_float('l2_regularization', 0.0, 1.0),
+            'max_bins': trial.suggest_int('max_bins', 128, 255),
+            'random_state': 42
+        }
+        
+        score = compute_absolute_cv(
+            HistGradientBoostingRegressor,
+            params,
+            X_train,
+            y_train,
+            train_crop_means
+        )
+        return score
+
+    try:
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=20) # 25-40 trials
+        
+        print("\nOptimization complete.")
+        print("Best params:", study.best_params)
+        return study.best_params
+    except Exception as e:
+        print(f"Optuna optimization failed: {e}. Using default parameters.")
+        return None
+
 def train_best_model(X_train, y_train, train_crop_means):
     """
     Trains RF and HGB, compares them, and selects the best architecture.
@@ -306,8 +344,13 @@ def train_best_model(X_train, y_train, train_crop_means):
         print("Selected Best Model Architecture: RandomForest")
         model_name = "RF"
     
+    # Run Optuna Hyperparameter Optimization
+    best_hgb_params = optimize_hgb(X_train, y_train, train_crop_means)
+    
     # PART 2 & 12 — Tuned HGB parameters for quantile stability and robustness
     print("\nTraining Tuned Probabilistic Quantile Models (0.2, 0.5, 0.8)...")
+    
+    # Default parameters as fallback
     hgb_params = {
         'max_iter': 400,
         'learning_rate': 0.03,
@@ -320,6 +363,11 @@ def train_best_model(X_train, y_train, train_crop_means):
         'n_iter_no_change': 20,
         'random_state': 42
     }
+    
+    # Apply Optuna results if available
+    if best_hgb_params:
+        print("Applying best Optuna parameters...")
+        hgb_params.update(best_hgb_params)
     
     model_q20 = HistGradientBoostingRegressor(loss="quantile", quantile=0.2, **hgb_params)
     model_q50 = HistGradientBoostingRegressor(loss="quantile", quantile=0.5, **hgb_params)
@@ -334,7 +382,7 @@ def train_best_model(X_train, y_train, train_crop_means):
     model_q80.fit(X_train, y_train)
     point_model.fit(X_train, y_train)
     
-    return model_q20, model_q50, model_q80, point_model, model_name, rf_cv, hgb_cv
+    return model_q20, model_q50, model_q80, point_model, model_name, rf_cv, hgb_cv, hgb_params
 
 def evaluate_model(model_q20, model_q50, model_q80, point_model, model_name, X_test, y_test_log, y_test_original, test_crop_means, df_full):
     """
@@ -577,7 +625,7 @@ def save_models(model_q20, model_q50, model_q80, point_model, features, feature_
     
     joblib.dump(features, feature_cols_path)
 
-def save_model_metadata(df, feature_cols):
+def save_model_metadata(df, feature_cols, hgb_params):
     """
     Saves metadata about the model version, dataset, and features.
     """
@@ -587,7 +635,8 @@ def save_model_metadata(df, feature_cols):
         "features": feature_cols,
         "num_features": len(feature_cols),
         "years_used": sorted(df["year"].unique().tolist()),
-        "model_type": "Quantile RandomForest Hybrid",
+        "model_type": "Quantile HistGradientBoosting Hybrid",
+        "hgb_params": hgb_params,
         "target": "relative yield",
         "climate_features": [
             'season_temperature',
@@ -623,7 +672,7 @@ def main():
         X_train, X_test, y_train, y_test, y_test_original, train_crop_means, test_crop_means, feature_cols = split_data(df)
 
         # Step 5, 6, 7, 8: Train Best Model
-        model_q20, model_q50, model_q80, point_model, model_name, rf_cv, hgb_cv = train_best_model(X_train, y_train, train_crop_means)
+        model_q20, model_q50, model_q80, point_model, model_name, rf_cv, hgb_cv, hgb_params = train_best_model(X_train, y_train, train_crop_means)
         best_cv = max(rf_cv, hgb_cv)
 
         # Step 9, 10, 11: Evaluate
@@ -673,7 +722,7 @@ def main():
 
         # Step 13: Save
         save_models(model_q20, model_q50, model_q80, point_model, feature_cols, features_path)
-        save_model_metadata(df, feature_cols)
+        save_model_metadata(df, feature_cols, hgb_params)
 
         # Step 12: Test
         test_prediction(model_q20, model_q50, model_q80, point_model, model_name, feature_cols, df)
