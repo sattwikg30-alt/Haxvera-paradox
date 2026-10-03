@@ -52,5 +52,9 @@ __pycache__/
 *.pyc
 model.pkl
 features.pkl
-
-package-lock.json
+model_point.pkl
+model_q10.pkl
+model_q20.pkl
+model_q50.pkl
+model_q80.pkl
+model_q90.pkl

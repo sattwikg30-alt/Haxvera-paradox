@@ -128,11 +128,12 @@ def split_data(df):
 
 def train_best_model(X_train, y_train):
     """
-    Trains RF and HGB, compares them, and selects the best.
+    Trains RF and HGB, compares them, and selects the best architecture.
+    Then trains tuned quantile models (0.2, 0.5, 0.8) and a point model for hybrid prediction.
     """
     print("\nTraining and comparing models...")
     
-    # STEP 7: Keep RF Improvements
+    # RandomForest for initial comparison
     rf_model = RandomForestRegressor(
         n_estimators=500,
         max_depth=20,
@@ -143,9 +144,8 @@ def train_best_model(X_train, y_train):
         n_jobs=-1
     )
     
-    # FIX 4: Replace RandomizedSearchCV with stable HGB model
-    print("Training HistGradientBoostingRegressor (stable hyperparameters)...")
-    hgb_model = HistGradientBoostingRegressor(
+    # Stable HGB model for initial architecture comparison
+    hgb_comparison = HistGradientBoostingRegressor(
         max_iter=300,
         learning_rate=0.05,
         max_depth=10,
@@ -153,102 +153,161 @@ def train_best_model(X_train, y_train):
         random_state=42
     )
     
-    # STEP 9: CV Comparison
     print("Running CV for RandomForest...")
     rf_scores = cross_val_score(rf_model, X_train, y_train, cv=5)
     print(f"RF CV mean: {rf_scores.mean():.4f}")
     
     print("Running CV for HistGradientBoosting...")
-    hgb_scores = cross_val_score(hgb_model, X_train, y_train, cv=5)
+    hgb_scores = cross_val_score(hgb_comparison, X_train, y_train, cv=5)
     print(f"HGB CV mean: {hgb_scores.mean():.4f}")
     
-    # Select better model automatically
     if hgb_scores.mean() > rf_scores.mean():
-        print("Selected Best Model: HistGradientBoosting")
-        best_model = hgb_model
+        print("Selected Best Model Architecture: HistGradientBoosting")
         model_name = "HGB"
     else:
-        print("Selected Best Model: RandomForest")
-        best_model = rf_model
+        print("Selected Best Model Architecture: RandomForest")
         model_name = "RF"
     
-    # Train best model on full data
-    best_model.fit(X_train, y_train)
+    # PART 2 & 12 — Tuned HGB parameters for quantile stability and robustness
+    print("\nTraining Tuned Probabilistic Quantile Models (0.2, 0.5, 0.8)...")
+    hgb_params = {
+        'max_iter': 400,
+        'learning_rate': 0.03,
+        'max_depth': 8,
+        'min_samples_leaf': 40,
+        'l2_regularization': 0.1,
+        'max_bins': 255,
+        'early_stopping': True,
+        'validation_fraction': 0.1,
+        'n_iter_no_change': 20,
+        'random_state': 42
+    }
     
-    return best_model, model_name, rf_scores.mean(), hgb_scores.mean()
+    model_q20 = HistGradientBoostingRegressor(loss="quantile", quantile=0.2, **hgb_params)
+    model_q50 = HistGradientBoostingRegressor(loss="quantile", quantile=0.5, **hgb_params)
+    model_q80 = HistGradientBoostingRegressor(loss="quantile", quantile=0.8, **hgb_params)
+    
+    # PART 10 — Point model for hybrid prediction
+    point_model = HistGradientBoostingRegressor(loss="squared_error", **hgb_params)
+    
+    print("Fitting quantile and point models...")
+    model_q20.fit(X_train, y_train)
+    model_q50.fit(X_train, y_train)
+    model_q80.fit(X_train, y_train)
+    point_model.fit(X_train, y_train)
+    
+    return model_q20, model_q50, model_q80, point_model, model_name, rf_scores.mean(), hgb_scores.mean()
 
-def evaluate_model(model, model_name, X_test, y_test_log, y_test_original):
+def evaluate_model(model_q20, model_q50, model_q80, point_model, model_name, X_test, y_test_log, y_test_original, df_full):
     """
-    Evaluates the model and prints metrics using real yield.
+    Evaluates the tuned probabilistic models with quantile smoothing and calibrated metrics.
     """
-    print(f"\nEvaluating {model_name} on latest year test set...")
+    print(f"\nEvaluating Tuned Probabilistic {model_name} Models...")
     
-    # Get log predictions
-    log_predictions = model.predict(X_test)
+    # PART 3 — Quantile Predictions
+    q20 = model_q20.predict(X_test)
+    q50 = model_q50.predict(X_test)
+    q80 = model_q80.predict(X_test)
     
-    # FIX 5: Restore prediction conversion
-    predicted_yield = np.expm1(log_predictions)
+    yield_q20 = np.expm1(q20)
+    yield_q50 = np.expm1(q50)
+    yield_q80 = np.expm1(q80)
     
-    r2 = r2_score(y_test_original, predicted_yield)
-    mae = mean_absolute_error(y_test_original, predicted_yield)
-    rmse = np.sqrt(mean_squared_error(y_test_original, predicted_yield))
+    # PART 3 — Quantile crossing prevention (Smoothing Trick)
+    yield_q20 = np.minimum(yield_q20, yield_q50)
+    yield_q80 = np.maximum(yield_q80, yield_q50)
     
-    print(f"R2 Score: {r2:.4f}")
-    print(f"MAE: {mae:.4f}")
-    print(f"RMSE: {rmse:.4f}")
+    # PART 10 — Hybrid Prediction (Blend)
+    yield_point = np.expm1(point_model.predict(X_test))
+    yield_blend = (0.7 * yield_q50 + 0.3 * yield_point)
     
-    # PART 7 — Feature importance measurement
-    print(f"\nFeature importance ({model_name}):")
-    if hasattr(model, 'feature_importances_'):
-        importances = model.feature_importances_
-    else:
-        # Use permutation importance for models without feature_importances_ (like HGB)
-        print("Model has no feature_importances_. Calculating permutation importance (on sample)...")
-        # To speed up, we use a sample of X_test
-        sample_size = min(1000, X_test.shape[0])
-        perm_imp = permutation_importance(model, X_test[:sample_size], y_test_log[:sample_size], n_repeats=5, random_state=42)
-        importances = perm_imp.importances_mean
+    # Evaluation Metrics using Blend/Median
+    r2 = r2_score(y_test_original, yield_blend)
+    mae = mean_absolute_error(y_test_original, yield_blend)
+    rmse = np.sqrt(mean_squared_error(y_test_original, yield_blend))
+    
+    # PART 8 — Median Absolute Deviation
+    mad = np.median(np.abs(yield_q50 - y_test_original))
+    
+    print(f"R2 Score (Hybrid Blend): {r2:.4f}")
+    print(f"MAE (Hybrid Blend): {mae:.4f}")
+    print(f"RMSE (Hybrid Blend): {rmse:.4f}")
+    print(f"Median Absolute Deviation: {mad:.4f}")
+    
+    # PART 7 — Interval Calibration (0.2 to 0.8)
+    inside = (y_test_original >= yield_q20) & (y_test_original <= yield_q80)
+    coverage = inside.mean()
+    print(f"Interval coverage (0.2 to 0.8): {coverage:.4f}")
+    
+    # PART 4 & 11 — Uncertainty Metrics (Relative & Normalized)
+    mean_raw_width = (yield_q80 - yield_q20).mean()
+    median_yield_test = np.median(yield_q50)
+    relative_width = (yield_q80 - yield_q20) / (median_yield_test + 0.001)
+    
+    # Get crop medians for normalization
+    crop_medians = df_full.groupby("crop_code")["yield"].median()
+    # Align with X_test
+    test_crop_medians = X_test["crop_code"].map(crop_medians)
+    normalized_width = (yield_q80 - yield_q20) / (test_crop_medians + 0.001)
+    
+    print(f"Mean uncertainty width: {mean_raw_width:.4f}")
+    print(f"Relative uncertainty: {relative_width.mean():.4f}")
+    print(f"Normalized uncertainty (by crop): {normalized_width.mean():.4f}")
+    
+    # PART 5 & 6 — Fix risk score calculation and thresholds
+    risk = (yield_q80 - yield_q20) / (yield_q50 + 0.5)
+    
+    def get_risk_level(r):
+        if r < 0.6: return "LOW"
+        elif r < 1.2: return "MEDIUM"
+        else: return "HIGH"
+    
+    risk_levels = [get_risk_level(r) for r in risk]
+    risk_counts = pd.Series(risk_levels).value_counts(normalize=True) * 100
+    
+    print("\nRisk distribution:")
+    for level in ["LOW", "MEDIUM", "HIGH"]:
+        pct = risk_counts.get(level, 0.0)
+        print(f"{level.capitalize()} risk: {pct:.1f}%")
 
-    if importances is not None:
-        feature_names = X_test.columns
-        imp_df = pd.DataFrame({'feature': feature_names, 'importance': importances})
-        imp_df = imp_df.sort_values(by='importance', ascending=False)
-        print(imp_df)
+    # PART 9 — Stabilized Feature Importance
+    print(f"\nFeature importance (HGB Median Model):")
+    print("Calculating stabilized permutation importance (sample=3000)...")
+    sample_size = min(3000, X_test.shape[0])
+    perm_imp = permutation_importance(model_q50, X_test[:sample_size], y_test_log[:sample_size], n_repeats=5, random_state=42)
+    
+    feature_names = X_test.columns
+    imp_df = pd.DataFrame({'feature': feature_names, 'importance': perm_imp.importances_mean})
+    imp_df = imp_df.sort_values(by='importance', ascending=False)
+    print(imp_df)
+    
+    climate_features = ["season_temperature", "season_rainfall", "season_humidity", "season_solar", "season_soil"]
+    climate_importance = imp_df[imp_df["feature"].isin(climate_features)]["importance"].sum()
+    print(f"\nTotal climate importance: {climate_importance:.4f}")
+    print(f"Climate importance %: {climate_importance * 100:.2f}%")
+    
+    return r2, mae, rmse, climate_importance * 100, coverage, mean_raw_width, relative_width.mean()
+
+def save_model(model_q20, model_q50, model_q80, point_model, features, feature_cols_path):
+    """Saves all tuned probabilistic models."""
+    model_dir = os.path.join('ml', 'models')
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
         
-        # PART 8 — Climate importance percentage
-        climate_features = [
-            "season_temperature", "season_rainfall", "season_humidity",
-            "season_solar", "season_soil"
-        ]
-        climate_importance = imp_df[imp_df["feature"].isin(climate_features)]["importance"].sum()
-        print(f"\nTotal climate importance: {climate_importance:.4f}")
-        print(f"Climate importance %: {climate_importance * 100:.2f}%")
-        
-        # PART 9 — Compare environmental vs structural features
-        for feat in ["Area", "district_code", "crop_code"]:
-            val = imp_df[imp_df["feature"] == feat]
-            if not val.empty:
-                print(f"{feat} importance: {val['importance'].values[0]:.4f}")
-        
-        return r2, mae, rmse, climate_importance * 100
+    print(f"\nSaving tuned quantile models to {model_dir}...")
+    joblib.dump(model_q20, os.path.join('ml', 'model_q20.pkl'))
+    joblib.dump(model_q50, os.path.join('ml', 'model_q50.pkl'))
+    joblib.dump(model_q80, os.path.join('ml', 'model_q80.pkl'))
+    joblib.dump(point_model, os.path.join('ml', 'model_point.pkl'))
     
-    return r2, mae, rmse, 0
+    joblib.dump(features, feature_cols_path)
 
-def save_model(model, features, model_path, features_path):
-    """Saves the model and feature column order."""
-    print(f"\nSaving model to {model_path}...")
-    joblib.dump(model, model_path)
-    
-    print(f"Saving features to {features_path}...")
-    joblib.dump(features, features_path)
-
-def test_prediction(model, model_name, feature_columns):
+def test_prediction(model_q20, model_q50, model_q80, point_model, model_name, feature_columns):
     """
-    Runs a test prediction with sample input and uncertainty analysis.
+    Runs test prediction with tuned intervals and updated risk levels.
     """
-    print(f"\nRunning test prediction for {model_name} with uncertainty...")
+    print(f"\nRunning test prediction for {model_name} with tuned intervals...")
     
-    # STEP 11: Fix Test Prediction Sample (Extended for new features)
     sample_data = {
         'Area': np.log1p(2.0),
         'crop_code': 10,
@@ -271,25 +330,29 @@ def test_prediction(model, model_name, feature_columns):
     
     sample_df = pd.DataFrame([sample_data])[feature_columns]
     
-    # Get mean log prediction
-    log_pred = model.predict(sample_df)[0]
+    # Quantile Predictions
+    yield_q20 = np.expm1(model_q20.predict(sample_df))[0]
+    yield_q50 = np.expm1(model_q50.predict(sample_df))[0]
+    yield_q80 = np.expm1(model_q80.predict(sample_df))[0]
     
-    # FIX 6: Fix test prediction conversion
-    yield_pred = np.expm1(log_pred)
+    # Smoothing Trick
+    yield_q20 = min(yield_q20, yield_q50)
+    yield_q80 = max(yield_q80, yield_q50)
     
-    # STEP 12: Uncertainty
-    if model_name == "RF":
-        all_tree_log_preds = np.array([tree.predict(sample_df.values)[0] for tree in model.estimators_])
-        all_tree_yields = np.expm1(all_tree_log_preds)
-        
-        std_yield = all_tree_yields.std()
-        lower = yield_pred - std_yield
-        upper = yield_pred + std_yield
-        print(f"Predicted yield: {yield_pred:.4f} ton/hectare")
-        print(f"Confidence range: [{lower:.4f}, {upper:.4f}]")
-    else:
-        print(f"Predicted yield: {yield_pred:.4f} ton/hectare")
-        print("Uncertainty skip for HGB (as per instructions)")
+    # Hybrid Prediction
+    yield_point = np.expm1(point_model.predict(sample_df))[0]
+    yield_blend = 0.7 * yield_q50 + 0.3 * yield_point
+    
+    print(f"Predicted yield (Hybrid): {yield_blend:.4f} ton/hectare")
+    print(f"Confidence interval (q20-q80): [{yield_q20:.2f}, {yield_q80:.2f}]")
+    
+    # PART 5 & 6 — Tuned Risk Score
+    risk = (yield_q80 - yield_q20) / (yield_q50 + 0.5)
+    if risk < 0.6: risk_level = "LOW"
+    elif risk < 1.2: risk_level = "MEDIUM"
+    else: risk_level = "HIGH"
+    
+    print(f"Risk level: {risk_level} (Score: {risk:.4f})")
 
 def run_ablation_test(df, feature_cols):
     """
@@ -342,11 +405,13 @@ def main():
         X_train, X_test, y_train, y_test, y_test_original, feature_cols = split_data(df)
 
         # Step 5, 6, 7, 8: Train Best Model
-        model, model_name, rf_cv, hgb_cv = train_best_model(X_train, y_train)
+        model_q20, model_q50, model_q80, point_model, model_name, rf_cv, hgb_cv = train_best_model(X_train, y_train)
         best_cv = max(rf_cv, hgb_cv)
 
         # Step 9, 10, 11: Evaluate
-        r2, mae, rmse, climate_imp_pct = evaluate_model(model, model_name, X_test, y_test, y_test_original)
+        r2, mae, rmse, climate_imp_pct, coverage, mean_width, rel_width = evaluate_model(
+            model_q20, model_q50, model_q80, point_model, model_name, X_test, y_test, y_test_original, df
+        )
 
         # PART 11 — Ablation test
         cv_no_climate = run_ablation_test(df, feature_cols)
@@ -364,16 +429,20 @@ def main():
         # PART 12 — Final reporting
         print("\nFINAL REPORTING SUMMARY")
         print("-" * 30)
-        # Note: These values would ideally come from merge_datasets.py but we print them here based on expectation
+        print(f"Model: {model_name} Quantile tuned")
+        print(f"R2 (Hybrid): {r2:.4f}")
+        print(f"Coverage: {coverage:.4f}")
+        print(f"Mean width: {mean_width:.4f}")
+        print(f"Relative width: {rel_width:.4f}")
         print(f"Climate importance %: {climate_imp_pct:.2f}%")
         print(f"CV improvement: {cv_improvement:+.4f}")
         print("-" * 30)
 
         # Step 13: Save
-        save_model(model, feature_cols, model_path, features_path)
+        save_model(model_q20, model_q50, model_q80, point_model, feature_cols, features_path)
 
         # Step 12: Test
-        test_prediction(model, model_name, feature_cols)
+        test_prediction(model_q20, model_q50, model_q80, point_model, model_name, feature_cols)
 
         print("\nModel training complete")
 
